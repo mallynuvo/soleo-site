@@ -503,20 +503,33 @@ header{position:sticky;top:0;z-index:50;background:rgba(253,247,235,.85);backdro
       // localStorage חסום (מצב פרטי וכו') — עדיין מציגים תודה
     }
 
-    // שליחת ההרשמה למייל של מלי — כדי שאף לקוחה לא תלך לאיבוד
+    // שליחת ההרשמה למייל של מלי — Web3Forms ראשי, FormSubmit גיבוי. אף לקוחה לא הולכת לאיבוד.
     try {
-      fetch('https://formsubmit.co/ajax/mallyschecter@gmail.com', {
+      fetch('https://api.web3forms.com/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({
-          _subject: '🍋 הרשמה חדשה ל-Soleo — ' + name,
+          access_key: '31815f22-008b-4ee7-b09d-b16eeaed686c',
+          subject: '🍋 הרשמה חדשה ל-Soleo — ' + name + ' (' + entry.plan + ')',
+          from_name: 'Soleo Website',
           'חבילה': entry.plan,
           'שם': name,
           'וואטסאפ': phone,
           'מייל': email,
           'תחילת ניסיון': entry.trialStart
         })
-      }).catch(function () {});
+      }).then(function (r) { if (!r.ok) throw new Error('w3f'); })
+      .catch(function () {
+        // גיבוי: FormSubmit
+        fetch('https://formsubmit.co/ajax/mallyschecter@gmail.com', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({
+            _subject: '🍋 הרשמה חדשה ל-Soleo — ' + name,
+            'חבילה': entry.plan, 'שם': name, 'וואטסאפ': phone, 'מייל': email
+          })
+        }).catch(function () {});
+      });
     } catch (ex2) {}
 
     // הודעת תודה
