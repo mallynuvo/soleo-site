@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soleo · Finance made simple.</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='16'%20fill='%23FFD600'/%3E%3Cg%20transform='rotate(-14%2032%2036)'%3E%3Cpath%20d='M32%2013%20C22%2013%2015%2023%2015%2036%20C15%2049%2022%2057%2032%2057%20C42%2057%2049%2049%2049%2036%20C49%2023%2042%2013%2032%2013%20Z'%20fill='%23FFF9E8'/%3E%3Cpath%20d='M36%2010%20C42%203%2052%205%2055%209%20C51%2016%2041%2016%2036%2010Z'%20fill='%233F9435'/%3E%3Crect%20x='17'%20y='29'%20width='13'%20height='9'%20rx='4.5'%20fill='%231C1C1C'/%3E%3Crect%20x='34'%20y='29'%20width='13'%20height='9'%20rx='4.5'%20fill='%231C1C1C'/%3E%3Crect%20x='29'%20y='31.5'%20width='6'%20height='2.5'%20fill='%231C1C1C'/%3E%3Cpath%20d='M26%2046%20q6%205%2012%200'%20stroke='%231C1C1C'%20stroke-width='2.4'%20fill='none'%20stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Varela+Round&family=Rubik:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app/style.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">
+    <span class="logo" style="background:transparent;padding:0;overflow:visible">
+      <img src="mascot.jpeg" alt="Soleo" style="width:44px;height:44px;border-radius:50%;object-fit:cover;display:block">
+    </span>
+    <div>
+      <h1 style="display:inline-flex;align-items:center;gap:4px;font-family:'Varela Round','Rubik','Heebo',sans-serif;font-weight:400;font-size:24px;letter-spacing:.01em">soleo<span style="width:8px;height:8px;border-radius:50%;background:#FFD600;display:inline-block;margin-top:10px"></span></h1>
+      <div class="sub"><span style="font-weight:700;color:#1C1C1C">Finance made</span> <span style="font-weight:800;color:#F0B400">simple.</span> · <span id="profileLabel"></span></div>
+    </div>
+  </div>
+  <div class="topActions">
+    <select id="profileSelect" title="תיק"></select>
+    <button id="btnNewProfile" class="ghost" title="תיק חדש">+ תיק</button>
+    <button id="btnExport" class="ghost">גיבוי ⬇</button>
+    <button id="btnImport" class="ghost">שחזור ⬆</button>
+    <input type="file" id="importFile" accept=".json" hidden>
+    <button id="btnDemo" class="ghost">טען דוגמה</button>
+  </div>
+</header>
+
+<div id="alertsBar"></div>
+
+<nav id="tabs">
+  <button data-tab="home" class="active">🏠 הבית</button>
+  <button data-tab="actions">✅ לעשות</button>
+  <button data-tab="moneydate">📅 הדייט</button>
+  <button data-tab="budgets">📊 תקציבים</button>
+  <button data-tab="income">👥 לקוחות</button>
+  <button data-tab="advisor">💬 יועץ</button>
+  <button id="moreBtn" type="button">עוד ▾</button>
+  <button data-tab="goals" class="more">🎯 יעדים</button>
+  <button data-tab="pipeline" class="more">🤝 עסקאות בדרך</button>
+  <button data-tab="grow" class="more">📈 לגדול</button>
+  <button data-tab="impulse" class="more">🛑 לפני שקונים</button>
+  <button data-tab="onboarding" class="more">🍋 התאמה אישית</button>
+  <button data-tab="cashflow" class="more">💳 תזרים</button>
+  <button data-tab="accountant" class="more">🧾 דוח לרו"ח</button>
+  <button data-tab="taxplan" class="more">💡 תכנון מס</button>
+  <button data-tab="cashforecast" class="more">תזרים צפוי</button>
+  <button data-tab="forecast" class="more">תחזית ומס</button>
+  <button data-tab="plan" class="more">תכנון קדימה</button>
+  <button data-tab="marketing" class="more">שיווק</button>
+  <button data-tab="vs" class="more">תכנון מול ביצוע</button>
+  <button data-tab="scenarios" class="more">תרחישים</button>
+  <button data-tab="invest" class="more">השקעות 📈</button>
+  <button data-tab="freedom" class="more">תוכנית חופש 🎯</button>
+  <button data-tab="settings" class="more">הגדרות</button>
+</nav>
+
+<main>
+  <section id="tab-home" class="tab active"></section>
+  <section id="tab-actions" class="tab"></section>
+  <section id="tab-onboarding" class="tab"></section>
+  <section id="tab-goals" class="tab"></section>
+  <section id="tab-pipeline" class="tab"></section>
+  <section id="tab-moneydate" class="tab"></section>
+  <section id="tab-grow" class="tab"></section>
+  <section id="tab-impulse" class="tab"></section>
+  <section id="tab-advisor" class="tab"></section>
+  <section id="tab-cashflow" class="tab"></section>
+  <section id="tab-cashforecast" class="tab"></section>
+  <section id="tab-budgets" class="tab"></section>
+  <section id="tab-income" class="tab"></section>
+  <section id="tab-accountant" class="tab"></section>
+  <section id="tab-taxplan" class="tab"></section>
+  <section id="tab-forecast" class="tab"></section>
+  <section id="tab-plan" class="tab"></section>
+  <section id="tab-marketing" class="tab"></section>
+  <section id="tab-vs" class="tab"></section>
+  <section id="tab-scenarios" class="tab"></section>
+  <section id="tab-invest" class="tab"></section>
+  <section id="tab-freedom" class="tab"></section>
+  <section id="tab-settings" class="tab"></section>
+</main>
+
+<button onclick="openSupport()" title="נתקלת בבעיה? אנחנו כאן"
+  style="position:fixed;bottom:18px;left:18px;z-index:90;border:none;cursor:pointer;background:#FFD600;color:#1C1C1C;font-family:inherit;font-weight:800;font-size:13.5px;border-radius:999px;padding:11px 18px;box-shadow:0 6px 18px rgba(232,168,0,.4)">💬 עזרה</button>
+
+<footer>
+  <span><b>soleo</b> 🍋 · Finance made simple. · הנתונים נשמרים מקומית · חישובי המס הם הערכה ואינם תחליף לרואה חשבון</span>
+</footer>
+
+<script src="data/bank_data.js"></script>
+<script src="data/clients_data.js"></script>
+<script src="app/state.js"></script>
+<script src="app/tax.js"></script>
+<script src="app/calc.js"></script>
+<script src="app/coach.js"></script>
+<script src="app/advisor.js"></script>
+<script src="app/charts.js"></script>
+<script src="app/demo.js"></script>
+<script src="app/ui.js"></script>
+</body>
+</html>
