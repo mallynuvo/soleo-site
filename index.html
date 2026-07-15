@@ -526,7 +526,7 @@ header{position:sticky;top:0;z-index:50;background:rgba(253,247,235,.85);backdro
       }).then(function (r) { if (!r.ok) throw new Error('w3f'); })
       .catch(function () {
         // גיבוי: FormSubmit
-        fetch('https://formsubmit.co/ajax/mallyschecter@gmail.com', {
+        fetch('https://formsubmit.co/ajax/msmallyschecter@gmail.com', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
           body: JSON.stringify({
@@ -536,6 +536,17 @@ header{position:sticky;top:0;z-index:50;background:rgba(253,247,235,.85);backdro
         }).catch(function () {});
       });
     } catch (ex2) {}
+
+    // צינור Brevo: מכניס את הנרשמת לרשימת Soleo Signups — והיא מקבלת אוטומטית
+    // את מייל הברוכה-הבאה מ-hello@soleoapp.com
+    try {
+      var bd = new FormData();
+      bd.append('EMAIL', email);
+      bd.append('email_address_check', '');
+      bd.append('locale', 'en');
+      fetch('https://ae693ccb.sibforms.com/v2/serve/MUIFAIaRKK8ioH2ZyAHSyHwYyXxnkLD9g8IG0FpfGpJtOCM361ziP-I8lcEplCusfNOvm_mnMyg15LY2TxtF75lkDqDwJE33xCLM8wTOUaD6KKazktm1FsfyMbmulpxyqx26cIqMiz_A6uUXmk4i0HvArd-nn0dcH4OdGpGu1jWW-evOvy-1UwLDbLi7NuJA5Uf0i59cc0aHXgiIkg==',
+        { method: 'POST', mode: 'no-cors', body: bd }).catch(function () {});
+    } catch (ex3) {}
 
     // הודעת תודה
     form.style.display = 'none';
