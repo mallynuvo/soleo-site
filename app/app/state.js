@@ -31,7 +31,7 @@ const DEFAULT_TAX_PARAMS = {
   employeeBlFull: 0.12         // מעל הסף
 };
 
-// הקטגוריות לפי ההגדרה של מלי
+// קטגוריות ברירת מחדל — מותאמות בשאלון
 const DEFAULT_CATEGORIES = [
   { name: "שכר דירה",              tag: "personal", budget: 6600, deductible: true }, // חלק כמשרד ביתי
   { name: "חשבונות",               tag: "personal", budget: 500, deductible: true },  // חשמל, ארנונה, טלפון, אינטרנט (חלק עסקי)
@@ -46,7 +46,7 @@ const DEFAULT_CATEGORIES = [
   { name: "חדר כושר",              tag: "personal", budget: 200 },
   { name: "מתנות והתפתחות אישית",  tag: "personal", budget: 1000, deductible: true }, // התפתחות מקצועית מוכרת
   { name: "בילויים ומסעדות",       tag: "personal", budget: 900 },
-  { name: "החזרי הלוואות",         tag: "personal", budget: 3900 },
+  { name: "החזרי הלוואות",         tag: "personal", budget: 0 },
   { name: "הוצאות לעסק",           tag: "biz", budget: 2000, deductible: true }       // קורסים, שיווק, רו"ח, כלים
 ];
 
@@ -104,24 +104,13 @@ function defaultGoals() {
 }
 
 function defaultFreedomPlan() {
+  const y = new Date().getFullYear();
   return {
-    annualSpendTarget: 2916000,   // כמה תוציאי בשנה כאישה עשירה
-    withdrawalRate: 0.04,         // כלל המשיכה הבטוחה — מספר החופש נגזר מזה
-    currentNetWorth: 0,           // מה שכבר צברת היום (השקעות, חסכונות, נדל"ן)
-    seedCapital: 250000,          // הון פתיחה (למשל מההורים)
-    seedYear: 2027,               // השנה שבה ההון הזה נכנס להשקעה
-    startYear: 2027,              // השנה שמתחילים להשקיע באופן שוטף (אחרי סגירת החוב)
-    startMonthly: 6000,           // עודף חודשי ריאלי כיום (אחרי סגירת החוב); גדל עם צמיחת ההכנסה
-    annualGrowth: 0.20,           // בכמה % גדל הסכום החודשי בכל שנה (צמיחת העסק)
-    annualReturn: 0.08,           // תשואה שנתית צפויה על ההשקעות
-    horizonYears: 12,             // אופק היעד לבדיקה
-    milestones: [
-      { year: 2026, title: "סגירת החוב (נוב' 2026)", done: false },
-      { year: 2027, title: "פתיחת תיק השקעות + הון פתיחה 250K", done: false },
-      { year: 2028, title: "מוצר דיגיטלי/תוכנית קבוצתית ראשונה — הכנסה לא תלוית-שעות", done: false },
-      { year: 2030, title: "השקעה חודשית של 40K+ (עסק במיליונים בשנה)", done: false },
-      { year: 2034, title: "הון של 25M+ והיערכות לאקזיט", done: false }
-    ]
+    annualSpendTarget: 480000,   // ברירת מחדל — מתעדכן מתרגיל החופש בשאלון
+    withdrawalRate: 0.04, currentNetWorth: 0,
+    seedCapital: 0, seedYear: y + 1, startYear: y + 1, startMonthly: 3000,
+    annualGrowth: 0.10, annualReturn: 0.08, horizonYears: 15,
+    milestones: []
   };
 }
 
@@ -170,56 +159,6 @@ function load() {
     }
   } catch (e) { console.warn("load failed", e); }
   return { profiles: { main: newProfile("התיק שלי") }, active: "main" };   // גרסה ציבורית: תיק נקי, השאלון יוביל את ההקמה
-}
-
-/* התיק האמיתי של מלי — נקודת פתיחה (יוני 2026): מעבר משכירות לעצמאות במאי 2026,
-   לקוח פרילנס ראשי ~35K/חודש (ללא מע"מ), חוב בסגירה עד נוב' 2026, הון פתיחה ~250K מההורים */
-function mallyStartingProfile() {
-  const p = newProfile("מלי");
-  p.settings.bizType = "morasheh";
-  p.onboarding = { done: true, answers: {} };   // מלי היא בעלת העסק — לא צריכה שאלון כניסה
-  p.settings.goalMonthlyIncome = 54000;   // מחזור ל-15K רווח נקי (~21 לקוחות פעילים)
-  p.settings.goalMonthlySavings = 10000;  // לעבר חלום החופש + מימון האפליקציה
-  p.settings.avgEngagementMonths = 12;
-  // הלקוחות האמיתיים (מקובץ "תשלום לקוחות") — paymentsLeft = סך תשלומים פחות ששולמו
-  const next = addMonths(thisMonth(), 1);
-  p.clients = [
-    { id: uid(), name: "מאיה מנצורה",      monthlyFee: 2617, paymentsLeft: 7,  startMonth: "" }, // 5/12
-    { id: uid(), name: "אילנה סלע",        monthlyFee: 2617, paymentsLeft: 1,  startMonth: "" }, // 11/12
-    { id: uid(), name: "דניאל סעדון",      monthlyFee: 2617, paymentsLeft: 1,  startMonth: "" }, // 11/12
-    { id: uid(), name: "לידון וחן ווקסלר", monthlyFee: 3051, paymentsLeft: 1,  startMonth: "" }, // 8/8 — תשלום אחרון ביוני
-    { id: uid(), name: "עומר רביד",        monthlyFee: 2617, paymentsLeft: 5,  startMonth: "" }, // 7/12
-    { id: uid(), name: "קלריסה סיידון",    monthlyFee: 2617, paymentsLeft: 5,  startMonth: "" }, // 7/12
-    { id: uid(), name: "מיכל ומור נעמן",   monthlyFee: 2856, paymentsLeft: 1,  startMonth: "" }, // 7/8
-    { id: uid(), name: "שרון כהן",         monthlyFee: 3301, paymentsLeft: 4,  startMonth: "" }, // 4/8
-    { id: uid(), name: "עומר ציפורי",      monthlyFee: 3458, paymentsLeft: 1,  startMonth: "" }, // 6/6 — תשלום אחרון ביוני
-    { id: uid(), name: "אוראל ימין",       monthlyFee: 2450, paymentsLeft: 11, startMonth: "" }, // 2/13
-    { id: uid(), name: "עידן לוי",         monthlyFee: 2450, paymentsLeft: 11, startMonth: "" }, // 2/13
-    { id: uid(), name: "עדי בלה",          monthlyFee: 2450, paymentsLeft: 11, startMonth: "" }, // 2/13
-    { id: uid(), name: "איטל",             monthlyFee: 2450, paymentsLeft: 11, startMonth: "" }, // 1/12
-    { id: uid(), name: "עומר אטיאס",       monthlyFee: 2450, paymentsLeft: 12, startMonth: next }, // 0/12 מתחיל חודש הבא
-    { id: uid(), name: "ספיר אליהו",       monthlyFee: 2975, paymentsLeft: 1,  startMonth: "" }  // 2/2 — תשלום אחרון ביוני
-  ];
-  // התחייבויות מתמשכות (תשלומים שנשארו) — מתעדכן ככל שתשלומים נגמרים
-  p.commitments = [
-    { id: uid(), name: "רדי אקשן (צילומים)", monthly: 3245, paymentsLeft: 10, startMonth: "", tag: "biz" },      // 2/12, נשארו 10
-    { id: uid(), name: "הלוואה גדולה",        monthly: 2480, paymentsLeft: 6,  startMonth: "", tag: "personal" }, // עד נוב' 2026
-    { id: uid(), name: "הלוואה קטנה",         monthly: 214,  paymentsLeft: 6,  startMonth: "", tag: "personal" }, // עד נוב' 2026
-    { id: uid(), name: "האצת סגירת חוב",      monthly: 1200, paymentsLeft: 6,  startMonth: "", tag: "personal" }  // עד נוב' 2026
-  ];
-  // הכנסות/הוצאות קבועות (יום בחודש) — לתזרים הצפוי
-  p.recurring = [
-    { id: uid(), name: "משכורת (שקלול לקוחות)", day: 10, amount: 43247,  kind: "income",  vatInclusive: true,  note: "כולל מע\"מ" },
-    { id: uid(), name: "שכר דירה (שיק)",        day: 1,  amount: -6600,  kind: "expense", vatInclusive: false, note: "" },
-    { id: uid(), name: "חשבונית Max (אשראי)",   day: 2,  amount: -14500, kind: "expense", vatInclusive: false, note: "אומדן — כולל הלוואות, רדי אקשן וקניות" },
-    { id: uid(), name: "אלדן (רכב)",            day: 14, amount: -1570,  kind: "expense", vatInclusive: false, note: "" },
-    { id: uid(), name: "ביטוח לאומי",           day: 21, amount: -1794,  kind: "expense", vatInclusive: false, note: "" }
-  ];
-  // השקעות — קרן השתלמות (יעד שנתי מוכר ~13,200). מעדכנים שווי נוכחי מאפליקציית הקרן.
-  p.investments = [
-    { id: uid(), name: "קרן השתלמות", annualTarget: 20500, currentValue: 0, deposits: [] } // 7% מוטב (מתוכו 13,200 מוכר למס)
-  ];
-  return p;
 }
 
 function save() {
@@ -296,10 +235,10 @@ function autoClassify(p) {
 
 /* ---------- תנועות בנק ----------
    נתוני הבנק הם "מקור האמת": בכל טעינה בונים מחדש את תנועות הבנק מתוך window.BANK_DATA,
-   ושומרים את הסיווגים/תיוגים הידניים של מלי לפי חתימה (תאריך|סכום|תיאור).
+   ושומרים את הסיווגים/תיוגים הידניים לפי חתימה (תאריך|סכום|תיאור).
    כך מזהה לא-ייחודי מהסורק (למשל Leumi) לא "בולע" תנועות אמיתיות. */
 function mergeBankData() {
-  if (DB.active !== "main") return 0;   // נתוני הבנק של מלי נכנסים רק לתיק הראשי — לא לתיקי לקוחות/דמו
+  if (DB.active !== "main") return 0;   // נתוני הבנק נכנסים רק לתיק הראשי — לא לתיקי לקוחות/דמו
   const bank = (window.BANK_DATA && window.BANK_DATA.transactions) || [];
   const p = P();
   const sig = t => `${t.date}|${t.amount}|${(t.desc || "").trim()}`;

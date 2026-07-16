@@ -106,7 +106,7 @@ function renderAdvisor() {
       <div style="max-width:85%;background:#faf8f4;border:1px solid var(--line);padding:10px 14px;border-radius:14px 14px 4px 14px;font-size:14.5px;line-height:1.7">${m.content}</div>
     </div>`;
   }).join("") : `<div class="muted" style="text-align:center;padding:24px 8px;font-size:14px">
-      שלום מלי 💚 אני המאמנת הפיננסית שלך. שאלי אותי כל שאלה על הכסף שלך — תקציב, מס, חיסכון, גיוס לקוחות, הדרך ל-73 מיליון — ואני אענה לפי הנתונים האמיתיים שלך.
+      שלום 💚 אני המאמנת הפיננסית שלך. אפשר לשאול אותי כל שאלה על הכסף שלך — תקציב, מס, חיסכון, גיוס לקוחות — ואני אענה לפי הנתונים האמיתיים שלך.
     </div>`;
 
   const typing = advisorBusy ? `<div style="display:flex;gap:9px;align-items:center;margin:10px 0">
@@ -236,7 +236,7 @@ function renderHome() {
       <img src="mascot.jpeg" alt="" style="width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0">
       <div style="flex:1">
         <div style="font-size:13px;color:#5C6E33;font-weight:700">${main ? "Soleo 🍋" : ""}</div>
-        <div style="font-size:15.5px;line-height:1.5;font-weight:500">${main ? esc(main.text) : "בוקר טוב, מלי!"}</div>
+        <div style="font-size:15.5px;line-height:1.5;font-weight:500">${main ? esc(main.text) : "ברוכים הבאים ל-Soleo! 🍋"}</div>
       </div>
     </div>
   </div>
@@ -2391,7 +2391,7 @@ function renderInvest() {
   </div>
 
   <div class="panel" style="background:var(--brand-soft)">
-    <p style="margin:0;font-size:13.5px;line-height:1.6">💡 כל פעם שתעדכני את השווי הנוכחי (מאפליקציית הקרן), תראי כאן כמה הכסף שלך <b>צמח מעבר להפקדות</b> — זה הריבית-דריבית שעובדת בשבילך לעבר ה-73 מיליון.</p>
+    <p style="margin:0;font-size:13.5px;line-height:1.6">💡 כל פעם שתעדכני את השווי הנוכחי (מאפליקציית הקרן), תראי כאן כמה הכסף שלך <b>צמח מעבר להפקדות</b> — זו הריבית-דריבית שעובדת בשבילך לעבר מספר החופש שלך.</p>
   </div>`;
 }
 function updInvest(id,k,v){const inv=P().investments.find(i=>i.id===id);if(inv)inv[k]=v;render();}

@@ -15,12 +15,13 @@ function coachMessages(p) {
 
   /* פתיח אישי */
   const leftover = act.income - act.expense;
-  const firstName = (p.name || "").split(" ")[0] || "";
+  const rawName = (p.name || "").split(" ")[0] || "";
+  const firstName = (p.name === "התיק שלי" || !rawName) ? "" : rawName;
   if (act.income > 0 || act.expense > 0) {
     msgs.push({ tone: "info", icon: "sparkles",
-      text: `${greet}, ${firstName}! ${mw} נכנסו ${fmt(act.income)} ויצאו ${fmt(act.expense)}. ${leftover >= 0 ? `נשאר לך ${fmt(leftover)} — יפה!` : `${G("שימי","שים")} לב: ${fmt(-leftover)} במינוס ${mw}.`}` });
+      text: `${greet}${firstName ? ", " + firstName : ""}! ${mw} נכנסו ${fmt(act.income)} ויצאו ${fmt(act.expense)}. ${leftover >= 0 ? `נשאר לך ${fmt(leftover)} — יפה!` : `${G("שימי","שים")} לב: ${fmt(-leftover)} במינוס ${mw}.`}` });
   } else {
-    msgs.push({ tone: "info", icon: "sparkles", text: `${greet}, ${firstName}! בוא נראה איפה הכסף שלך עומד היום.` });
+    msgs.push({ tone: "info", icon: "sparkles", text: `${greet}${firstName ? ", " + firstName : ""}! בוא נראה איפה הכסף שלך עומד היום.` });
   }
 
   /* חריגות תקציב — בעדינות ובחיוב */
@@ -51,7 +52,7 @@ function coachMessages(p) {
   const debtCat = p.categories.find(c => c.name.includes("הלוואות") || c.name.includes("חוב"));
   if (debtCat) {
     msgs.push({ tone: "info", icon: "flag",
-      text: `כל תשלום מקרב אותך לנובמבר 2026 — אז את חופשייה מהחוב, וה-₪${Math.round(3900).toLocaleString()} האלה הופכים להשקעה. תחזיקי מעמד, את כבר בדרך.` });
+      text: `כל תשלום מקרב אותך ליום שבו החוב נסגר — ואז הכסף הזה מתפנה לחיסכון ולהשקעה. ${G("תחזיקי","תחזק")} מעמד, זה קורה.` });
   }
 
   /* חיסכון החודש מול היעד */
