@@ -364,9 +364,9 @@ header{position:sticky;top:0;z-index:50;background:rgba(253,247,235,.85);backdro
         <div class="per">לחודש · אחרי 14 יום חינם</div>
         <ul>
           <li class="plus">הכל מהמתקדם, ועוד:</li>
-          <li>החשבוניות נאספות ומתויקות לבד</li>
           <li>חבילה חודשית מוכנה לרואה החשבון</li>
-          <li>תזכורת במייל לפני כל תשלום למדינה</li>
+          <li>בקרוב: החשבוניות נאספות ומתויקות לבד</li>
+          <li>בקרוב: תזכורת לפני כל תשלום למדינה</li>
         </ul>
         <a class="btn" href="#signup" data-plan="פרימיום">14 יום חינם</a>
       </div>
@@ -384,7 +384,7 @@ header{position:sticky;top:0;z-index:50;background:rgba(253,247,235,.85);backdro
 
     <details>
       <summary>זה בטוח לחבר את הבנק שלי?</summary>
-      <div class="ans">כן. החיבור הוא לצפייה בלבד — Soleo יכולה לראות את התנועות, אבל לא יכולה להזיז שקל. המידע שלך נשאר שלך, ולא עובר לאף אחד אחר.</div>
+      <div class="ans">כן. Soleo רק קוראת נתונים — היא לא יכולה לבצע שום פעולה בחשבון שלך. פרטי הגישה נשמרים מוצפנים אצלך במחשב בלבד (לא אצלנו), והנתונים הפיננסיים שלך נשארים במכשיר שלך. הפירוט המלא — <a href="/terms.html" style="color:inherit;font-weight:700">במדיניות הפרטיות</a>.</div>
     </details>
 
     <details>
@@ -431,6 +431,10 @@ header{position:sticky;top:0;z-index:50;background:rgba(253,247,235,.85);backdro
         <label for="fEmail">מייל</label>
         <input type="email" id="fEmail" name="email" placeholder="you@email.com" autocomplete="email" required>
       </div>
+      <div style="display:flex;align-items:flex-start;gap:8px;font-size:.9rem;text-align:right">
+        <input type="checkbox" id="fTerms" style="margin-top:5px;width:16px;height:16px;flex-shrink:0">
+        <label for="fTerms" style="font-weight:400;cursor:pointer">קראתי ואני מסכימ/ה ל<a href="/terms.html" target="_blank" style="color:inherit;font-weight:700">תנאי השימוש ומדיניות הפרטיות</a></label>
+      </div>
       <div id="formErr"></div>
       <button type="submit" class="btn">מתחילים את 14 הימים שלי ✨</button>
       <div style="text-align:center;font-size:.85rem;opacity:.75">פרטי התשלום נקבעים בשיחת ההפעלה · החיוב הראשון רק אחרי 14 יום</div>
@@ -455,6 +459,7 @@ header{position:sticky;top:0;z-index:50;background:rgba(253,247,235,.85);backdro
     <span class="wordmark">soleo<span class="dot"></span></span>
     <p class="disclaimer">
       Soleo היא כלי שעוזר לך להבין ולסדר את הכסף שלך. היא לא מחליפה ייעוץ אישי של רואה חשבון, יועץ מס או יועץ השקעות — להחלטות גדולות כדאי תמיד להתייעץ עם איש מקצוע. המידע באתר אינו מהווה ייעוץ פיננסי.
+      <br><a href="/terms.html" style="color:inherit">תנאי שימוש ומדיניות פרטיות</a> · <a href="mailto:hello@soleoapp.com" style="color:inherit">hello@soleoapp.com</a>
       <br>© 2026 Soleo. כל הזכויות שמורות.
     </p>
   </div>
@@ -482,6 +487,7 @@ header{position:sticky;top:0;z-index:50;background:rgba(253,247,235,.85);backdro
     if (!name) err = 'רק חסר לנו השם שלך 🙂';
     else if (!/^[\d\-+ ()]{8,}$/.test(phone)) err = 'המספר וואטסאפ נראה קצת קצר — אפשר לבדוק אותו?';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) err = 'המייל לא נראה תקין — אפשר להציץ שוב?';
+    else if (!document.getElementById('fTerms').checked) err = 'רק צריך לאשר את תנאי השימוש ומדיניות הפרטיות 🙂';
 
     if (err) {
       errBox.textContent = err;
