@@ -824,11 +824,11 @@ function runImpulse() {
 
 /* ========== 🍋 שאלון כניסה — פשוט, מתאים את האפליקציה לכל לקוח ========== */
 /* ========== 💛 עזרה ותמיכה — תמיד זמין, בכל מסך ========== */
-const SUPPORT_WA = "";   // מספר וואטסאפ התמיכה (למשל "972501234567") — יחובר לפני ההשקה
+const SUPPORT_EMAIL = "hello@soleoapp.com";   // כל התמיכה במייל (החלטת מלי 16.7); וואטסאפ — אולי בהמשך
 function openSupport() {
-  const msg = encodeURIComponent("היי Soleo 🍋 אני צריכ/ה עזרה עם: ");
-  if (SUPPORT_WA) window.open("https://wa.me/" + SUPPORT_WA + "?text=" + msg, "_blank");
-  else alert("💛 אנחנו כאן בשבילך!\n\nוואטסאפ התמיכה מתחבר ממש בימים אלה.\nבינתיים — כל שאלה למאמנת בטאב 💬 יועץ, או למלי ישירות.");
+  const subject = encodeURIComponent("עזרה עם Soleo 🍋");
+  const body = encodeURIComponent("היי צוות Soleo,\n\nאני צריכ/ה עזרה עם: ");
+  window.location.href = "mailto:" + SUPPORT_EMAIL + "?subject=" + subject + "&body=" + body;
 }
 
 let obStep = 0;
