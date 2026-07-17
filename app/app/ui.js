@@ -35,7 +35,9 @@ function renderTopbar() {
     .map(([id, p]) => `<option value="${id}" ${id === DB.active ? "selected" : ""}>${esc(p.name)}</option>`).join("");
   $("profileLabel").textContent = `תיק: ${P().name} · ${bizTypeName(P().settings.bizType)}`;
 }
-function bizTypeName(t) { return { patur: "עוסקת פטורה", morasheh: "עוסקת מורשה", baam: 'חברה בע"מ' }[t] || t; }
+function bizTypeName(t) {
+  return { patur: G("עוסקת פטורה", "עוסק פטור"), morasheh: G("עוסקת מורשה", "עוסק מורשה"), baam: 'חברה בע"מ' }[t] || t;
+}
 
 /* ========== התראות ========== */
 function renderAlerts() {
@@ -50,7 +52,7 @@ function renderAlerts() {
     if (b.level === "red")
       alerts.push({ level: "red", text: `חריגה בתקציב "${b.cat.name}": ${fmt(b.spent)} מתוך ${fmt(b.cat.budget)} (${pct(b.used)}) — חריגה של ${fmt(-b.remaining)}` });
     else if (b.level === "orange")
-      alerts.push({ level: "orange", text: `מתקרבת לסוף התקציב ב"${b.cat.name}": ${pct(b.used)} נוצלו, נשארו ${fmt(b.remaining)}` });
+      alerts.push({ level: "orange", text: `${G("מתקרבת","מתקרב")} לסוף התקציב ב"${b.cat.name}": ${pct(b.used)} נוצלו, נשארו ${fmt(b.remaining)}` });
   }
 
   if (p.settings.bizType === "patur") {
@@ -64,7 +66,7 @@ function renderAlerts() {
     const fc = buildForecast(p);
     const sp = companySwitchPoint(fc.annual.personalExpense, p.settings.creditPoints, tp);
     if (sp && fc.annual.profit >= sp * 0.85)
-      alerts.push({ level: "info", text: `את מתקרבת לרמת הרווח שבה כדאי לשקול מעבר לבע"מ (בערך ${fmt(sp)} בשנה) — פירוט במסך "תחזית ומס"` });
+      alerts.push({ level: "info", text: `${G("את מתקרבת","אתה מתקרב")} לרמת הרווח שבה כדאי לשקול מעבר לבע"מ (בערך ${fmt(sp)} בשנה) — פירוט במסך "תחזית ומס"` });
   }
 
   if (p.lastBackup) {
@@ -105,21 +107,27 @@ function renderAdvisor() {
       <div style="width:30px;height:30px;border-radius:50%;background:var(--brand-soft);flex:none;display:flex;align-items:center;justify-content:center;font-size:16px">💬</div>
       <div style="max-width:85%;background:#faf8f4;border:1px solid var(--line);padding:10px 14px;border-radius:14px 14px 4px 14px;font-size:14.5px;line-height:1.7">${m.content}</div>
     </div>`;
-  }).join("") : `<div class="muted" style="text-align:center;padding:24px 8px;font-size:14px">
-      שלום 💚 אני המאמנת הפיננסית שלך. אפשר לשאול אותי כל שאלה על הכסף שלך — תקציב, מס, חיסכון, גיוס לקוחות — ואני אענה לפי הנתונים האמיתיים שלך.
-    </div>`;
+  }).join("") : (function(){
+    const rawName = (P().name || "").split(" ")[0] || "";
+    const nm = /תיק|עסק|דמו|ראשי/.test(rawName) ? "" : rawName;
+    return `<div class="muted" style="text-align:center;padding:24px 8px;font-size:14px">
+      שלום${nm ? " " + esc(nm) : ""} 💚 אני המאמנת הפיננסית שלך. ${G("שאלי","שאל")} אותי כל שאלה על הכסף שלך — תקציב, מס, חיסכון, גיוס לקוחות, הדרך לחופש הכלכלי — ואני אענה לפי הנתונים האמיתיים שלך.
+    </div>`; })();
 
   const typing = advisorBusy ? `<div style="display:flex;gap:9px;align-items:center;margin:10px 0">
       <div style="width:30px;height:30px;border-radius:50%;background:var(--brand-soft);flex:none;display:flex;align-items:center;justify-content:center;font-size:16px">💬</div>
       <div class="muted" style="font-size:13.5px">חושבת…</div></div>` : "";
 
-  const offlineHelp = advisorServerUp === false ? `
+  const offlineHelp = advisorServerUp === false ? (advisorLocalSetup() ? `
     <div class="panel" style="background:#fdf3e3;border:1px solid #f0ddb8">
       <p style="margin:0 0 6px;font-weight:600;color:#8a5a10">היועץ החכם כבוי כרגע</p>
-      <p style="margin:0;font-size:13px;line-height:1.7;color:#8a5a10">להפעלה: דאבל-קליק על <b>"הפעל יועץ AI.command"</b> (השאירי את החלון פתוח). פעם ראשונה? קודם <b>"הגדרת מפתח AI.command"</b>.<br>
+      <p style="margin:0;font-size:13px;line-height:1.7;color:#8a5a10">להפעלה: דאבל-קליק על <b>"הפעל יועץ AI.command"</b> (${G("השאירי","השאר")} את החלון פתוח). פעם ראשונה? קודם <b>"הגדרת מפתח AI.command"</b>.<br>
       בינתיים השאלות המהירות למטה עובדות גם בלי חיבור — עם הנתונים שלך.</p>
-      <button class="small ghost" style="margin-top:8px" onclick="advisorServerUp=null;render()">בדקי שוב אם פעיל</button>
-    </div>` : "";
+      <button class="small ghost" style="margin-top:8px" onclick="advisorServerUp=null;render()">${G("בדקי","בדוק")} שוב אם פעיל</button>
+    </div>` : `
+    <div class="panel" style="background:var(--brand-soft);border:none">
+      <p style="margin:0;font-size:13px;line-height:1.7;color:#47541F">💬 הצ'אט החכם יגיע בקרוב. בינתיים — השאלות המהירות למטה עונות עם הנתונים האמיתיים שלך.</p>
+    </div>`) : "";
 
   $("tab-advisor").innerHTML = `
   <div class="panel" style="background:linear-gradient(135deg,#5C6E33,#47541F);color:#fff;border:none">
@@ -136,10 +144,10 @@ function renderAdvisor() {
   <div class="panel">
     <div style="max-height:48vh;overflow-y:auto;padding:2px 2px 4px">${bubbles}${typing}</div>
     <div class="addLine" style="margin-top:10px;border-top:1px solid var(--line);padding-top:12px;align-items:center">
-      <input type="text" id="advisorInput" placeholder="שאלי אותי כל שאלה… או דברי 🎤" style="flex:1;min-width:200px"
+      <input type="text" id="advisorInput" placeholder="${G("שאלי אותי כל שאלה… או דברי","שאל אותי כל שאלה… או דבר")} 🎤" style="flex:1;min-width:200px"
         onkeydown="if(event.key==='Enter'){event.preventDefault();advisorSendFromInput()}" ${advisorBusy?'disabled':''}>
-      <button id="advisorMic" class="ghost small" onclick="advisorVoice()" title="דברי במקום להקליד" ${advisorBusy?'disabled':''}>🎤</button>
-      <button onclick="advisorSendFromInput()" ${advisorBusy?'disabled':''}>שלחי</button>
+      <button id="advisorMic" class="ghost small" onclick="advisorVoice()" title="${G("דברי","דבר")} במקום להקליד" ${advisorBusy?'disabled':''}>🎤</button>
+      <button onclick="advisorSendFromInput()" ${advisorBusy?'disabled':''}>${G("שלחי","שלח")}</button>
       ${advisorChat.length?`<button class="ghost small" onclick="advisorClearChat()">נקה</button>`:''}
     </div>
   </div>
@@ -246,7 +254,7 @@ function renderHome() {
       <div style="font-size:26px">✅</div>
       <div style="flex:1">
         <div style="font-weight:800;font-size:15.5px;color:#1C1C1C">יש לך ${actCount} דברים שכדאי לעשות</div>
-        <div style="font-size:13px;color:#6d5c00">אני אומר לך בדיוק מה — צעד אחר צעד. לחצי לראות ←</div>
+        <div style="font-size:13px;color:#6d5c00">אני אומר לך בדיוק מה — צעד אחר צעד. ${G("לחצי","לחץ")} לראות ←</div>
       </div>
     </div>
   </div>` : ""}
@@ -256,13 +264,13 @@ function renderHome() {
       <div style="font-size:26px">📅</div>
       <div style="flex:1">
         <div style="font-weight:800;font-size:15.5px;color:#3d491f">זמן לדייט הפיננסי החודשי שלך</div>
-        <div style="font-size:13px;color:#5C6E33">5 דקות, ואת יודעת בדיוק איפה את עומדת. בואי נשב רגע ☕</div>
+        <div style="font-size:13px;color:#5C6E33">5 דקות, ${G("ואת יודעת בדיוק איפה את עומדת. בואי","ואתה יודע בדיוק איפה אתה עומד. בוא")} נשב רגע ☕</div>
       </div>
       <div style="font-size:20px;color:#5C6E33">←</div>
     </div>
   </div>` : ""}
 
-  ${align ? `<div class="alert ${align.pct>=0.7?'green':'orange'}">🎯 ${pct(align.pct)} מההוצאות שתייגת החודש שירתו את המטרות שלך (${align.yesCount}/${align.count}). ${align.pct>=0.7?'מדהים — את מוציאה בכוונה!':'שווה לשים לב להוצאות שלא מקדמות אותך.'}</div>`:""}
+  ${align ? `<div class="alert ${align.pct>=0.7?'green':'orange'}">🎯 ${pct(align.pct)} מההוצאות שתייגת החודש שירתו את המטרות שלך (${align.yesCount}/${align.count}). ${align.pct>=0.7?G('מדהים — את מוציאה בכוונה!','מדהים — אתה מוציא בכוונה!'):'שווה לשים לב להוצאות שלא מקדמות אותך.'}</div>`:""}
 
   ${(function(){
     // 📊 דשבורד בסגנון הבורד: כרטיס גדול + גרף + לימון, וכרטיסי צד
@@ -301,11 +309,11 @@ function renderHome() {
           <span style="width:40px;height:40px;border-radius:13px;background:#FDE9E4;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0">📉</span>
           <div><div style="font-size:11.5px;color:var(--muted)">הוצאות ${mw}</div><div style="font-size:18px;font-weight:800">${fmt(act.expense)}</div></div>
         </div>
-        <div class="panel" style="margin:0;padding:13px 15px;display:flex;align-items:center;gap:11px;background:#fff">
+        ${accounts.length ? `<div class="panel" style="margin:0;padding:13px 15px;display:flex;align-items:center;gap:11px;background:#fff">
           <span style="width:40px;height:40px;border-radius:13px;background:#E6F2F8;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0">👛</span>
           <div><div style="font-size:11.5px;color:var(--muted)">יתרה זמינה בחשבון</div><div style="font-size:18px;font-weight:800">${fmt(bankBalance)}</div>
           <div style="font-size:10px;color:var(--muted)">${syncAt?'עודכן '+new Date(syncAt).toLocaleString('he-IL',{day:'numeric',month:'numeric'}):'טרם סונכרן'}</div></div>
-        </div>
+        </div>` : ""}
       </div>
     </div>`; })()}
 
@@ -313,7 +321,10 @@ function renderHome() {
     // 🏢🏠 המסך החצוי: העסק מול הבית — ברמת הדשבורד, עם כניסה לפירוט
     const sp = bizHomeSplit(p, M);
     const ia = incomeAside(p, sp.biz.income);   // המסים מחושבים רק מההכנסה העסקית (לא מקצבאות/החזרים)
-    const bizLeft = sp.biz.income + (sp.exempt || 0) - sp.biz.expense - ia.aside;
+    const inVat = monthlyInputVat(p, M);                      // מע"מ תשומות שמתקזז מההוצאות המוכרות
+    const vatNet = Math.max(0, ia.vat - inVat);
+    const asideNet = vatNet + ia.taxNi;
+    const bizLeft = sp.biz.income + (sp.exempt || 0) - sp.biz.expense - asideNet;
     const persBudget = p.categories.filter(c => c.tag === "personal").reduce((s, c) => s + (c.budget || 0), 0);
     const homeLeft = persBudget - sp.home.expense;
     const os = (p.settings && p.settings.accountsSetup === "sep" && typeof ownerSalary === "function") ? ownerSalary(p) : null;
@@ -332,8 +343,8 @@ function renderHome() {
           ${row("📈","הכנסות מהעסק",fmt(sp.biz.income))}
           ${sp.exempt>0?row("🛡️","ממוסדות (ב\"ל וכו') — בלי מס",fmt(sp.exempt)):""}
           ${row("📉","הוצאות העסק",fmt(sp.biz.expense))}
-          ${row("🏛️","לשים בצד למסים החודש",fmt(ia.aside))}
-          <div class="small" style="color:#5C6E33;margin:-2px 0 2px;padding-right:22px">↳ מע"מ ${fmt(ia.vat)} · מס הכנסה + ביטוח לאומי ${fmt(ia.taxNi)} (לפי המדרגות שלך)</div>
+          ${row("🏛️","לשים בצד למסים החודש",fmt(asideNet))}
+          <div class="small" style="color:#5C6E33;margin:-2px 0 2px;padding-right:22px">↳ מע"מ לתשלום ${fmt(vatNet)}${inVat>0?` <b>(אחרי שההוצאות המוכרות קיזזו ${fmt(inVat)} ✨)</b>`:""} · מס הכנסה + ביטוח לאומי ${fmt(ia.taxNi)}</div>
           ${sp.biz.credit>0?row("💳","מזה באשראי",fmt(sp.biz.credit)):""}
           ${row("","נשאר בעסק",fmt(bizLeft),true)}
         </div>
@@ -354,6 +365,21 @@ function renderHome() {
           { label: "🏠 הבית", values: wk.map(b=>Math.round(b.home)), color: "#E8B400" }
         ], { height: 175 })}
       </div>`:""}
+    </div>`; })()}
+
+  ${(function(){
+    // 💚 כמה חסכת החודש — ההוצאות המוכרות עובדות בשבילך (התובנה של מלי מהרו"ח, 16.7)
+    const sv = monthlySavings(p, M);
+    if (!(sv.total > 0)) return "";
+    return `<div class="panel" style="background:#E7F6EC;border:none">
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="font-size:34px">💚</div>
+        <div style="flex:1">
+          <div style="font-size:16.5px;font-weight:800">ההוצאות המוכרות שלך חסכו לך ${mw} בערך ${fmt(Math.round(sv.total))}</div>
+          <div class="small" style="color:#2e5d3a;margin-top:3px">מע"מ שקוזז: <b>${fmt(Math.round(sv.vatBack))}</b> · פחות מס הכנסה: <b>${fmt(Math.round(sv.itBack))}</b> · פחות ביטוח לאומי: <b>${fmt(Math.round(sv.niBack))}</b> — על ${fmt(Math.round(sv.dedSpend))} הוצאות מוכרות</div>
+          <div class="small" style="margin-top:5px">רוצה לחסוך עוד? <button class="small ghost" onclick="activeTab='taxplan';render()">💡 לתכנון המס — לראות מה עוד מוכר ←</button></div>
+        </div>
+      </div>
     </div>`; })()}
 
   ${leftover>0 ? (function(){
@@ -378,10 +404,12 @@ function renderHome() {
   ${(function(){
     const ps = paymentsSummary(p);
     const auto = ps.active.filter(c => c.auto);
-    if (upcomingTotal <= 0 && !auto.length) return "";
+    const stateBoard = statePaymentsBoardHTML(p);
+    if (upcomingTotal <= 0 && !auto.length && !stateBoard) return "";
     const afterAll = bankBalance - upcomingTotal;
     return `<div class="panel" style="border-right:4px solid var(--accent)">
     <h2>💳 מה עוד צפוי לרדת</h2>
+    ${stateBoard?`<div style="margin-bottom:12px">${stateBoard}</div>`:""}
     ${upcomingTotal>0?`<p class="desc">חיובים שכבר משוריינים בכרטיס וטרם ירדו מהחשבון:</p>
     <div class="scrollX"><table>
       <tr><th>מתי</th><th>מה</th><th class="num">כמה</th></tr>
@@ -398,17 +426,17 @@ function renderHome() {
   </div>`; })()}
 
   <div class="row">
-    <div class="panel" style="flex:1">
+    ${score.total>0 && act.expense>0 ? `<div class="panel" style="flex:1">
       <h2>🔥 השליטה שלך החודש</h2>
       <div style="display:flex;align-items:center;gap:14px;margin-top:6px">
         <div style="font-size:40px;font-weight:800;color:${score.pct>=80?'var(--green)':score.pct>=50?'var(--orange)':'var(--red)'}">${score.pct}%</div>
-        <div class="muted small">את במסגרת ב-<b>${score.green} מתוך ${score.total}</b> הקטגוריות.<br>${score.pct>=80?"מצוין, ככה בונים הרגלים!":"כל קטגוריה שתחזירי למסגרת = ניצחון."}</div>
+        <div class="muted small">${G("את","אתה")} במסגרת ב-<b>${score.green} מתוך ${score.total}</b> הקטגוריות.<br>${score.pct>=80?"מצוין, ככה בונים הרגלים!":`כל קטגוריה ${G("שתחזירי","שתחזיר")} למסגרת = ניצחון.`}</div>
       </div>
-    </div>
+    </div>` : ""}
     <div class="panel" style="flex:1">
       <h2>🌟 חלום החופש</h2>
       <div style="font-size:22px;font-weight:700;color:var(--brand)">${fp?fmt(freedomNumber(fp)):"—"}</div>
-      <div class="small muted">${reach?`בקצב הנוכחי תגיעי בשנת ${reach}`:""}</div>
+      <div class="small muted">${reach?`לפי ההנחות בתוכנית החופש — ${G("תגיעי","תגיע")} בשנת ${reach}`:""}</div>
       <button class="small ghost" style="margin-top:8px" onclick="activeTab='freedom';render()">לתוכנית המלאה ←</button>
     </div>
   </div>
@@ -433,13 +461,14 @@ function renderHome() {
     <div class="cards" style="margin:0 0 10px">
       <div class="kpi"><div class="lbl">מס הכנסה</div><div class="val" style="font-size:18px">${fmt(sp.tax)}</div><div class="hint">מס על הרווח</div></div>
       <div class="kpi"><div class="lbl">ביטוח לאומי</div><div class="val" style="font-size:18px">${fmt(sp.ni)}</div><div class="hint">ביטוח דרך המדינה</div></div>
-      <div class="kpi"><div class="lbl">מע"מ</div><div class="val" style="font-size:18px">${fmt(sp.vat)}</div><div class="hint">נגבה מהלקוח, עובר למדינה</div></div>
+      ${P().settings.bizType==="patur" ? `<div class="kpi good"><div class="lbl">מע"מ</div><div class="val" style="font-size:18px">₪0</div><div class="hint">${G("עוסקת פטורה לא גובה","עוסק פטור לא גובה")} מע"מ 🙂</div></div>`
+        : `<div class="kpi"><div class="lbl">מע"מ</div><div class="val" style="font-size:18px">${fmt(sp.vat)}</div><div class="hint">נגבה מהלקוח, עובר למדינה${sp.inVat>0?` · אחרי קיזוז ${fmt(Math.round(sp.inVat))} תשומות`:""}</div></div>`}
     </div>
     <div class="small muted">החודשים הקרובים — כמה לשים בצד:</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
       ${sp.upcoming.map(u=>`<div style="flex:1;min-width:90px;text-align:center;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px"><div class="small muted">${u.label}</div><div style="font-weight:700">${fmt(u.amount)}</div></div>`).join("")}
     </div>
-    <div class="small muted" style="margin-top:8px">התאריכים המדויקים לתשלום מגיעים מרואה החשבון שלך. חישוב הערכה.</div>
+    <div class="small muted" style="margin-top:8px">${sp.src==="actual"?"מחושב מההכנסה העסקית שנכנסה בפועל "+monthWord(p):"מחושב מההכנסה החודשית שהצהרת — יתעדכן ברגע שייכנסו תנועות אמיתיות"}. התאריכים המדויקים לתשלום מגיעים מרואה החשבון שלך. חישוב הערכה.</div>
   </div>`; })()}
 
   ${(function(){ var pr=profitability(p); if(pr.revenue<=0) return "";
@@ -602,14 +631,16 @@ function renderMoneyDate() {
   const tpn = (typeof taxPlanning === "function") ? taxPlanning(p) : null;
 
   // הדבר האחד לעשות החודש
-  let oneThing = "פשוט להמשיך ככה — את במסלול טוב. 💚";
+  let oneThing = `פשוט להמשיך ככה — ${G("את","אתה")} במסלול טוב. 💚`;
   if (sv && !sv.doneThisMonth) oneThing = `להעביר ${fmt(sv.gap)} לחשבון החיסכון שלך — לשלם לעצמך קודם.`;
   else if (tpn && tpn.khRoom > 0) oneThing = `יש לך עוד ${fmt(tpn.khRoom)} מקום בקרן השתלמות — הפקדה שם חוסכת לך ${fmt(tpn.khSaving)} במס.`;
-  else if (sp) oneThing = `לשים בצד ${fmt(sp.perMonth)} למדינה — שלא תיתפסי לא מוכנה.`;
+  else if (sp) oneThing = `לשים בצד ${fmt(sp.perMonth)} למדינה — ${G("שלא תיתפסי","שלא תיתפס")} לא ${G("מוכנה","מוכן")}.`;
 
-  const step = (n, title, body) => `<div class="panel" style="border-right:4px solid var(--brand)">
+  // מספור רץ — שלבים שאין להם נתונים פשוט לא מופיעים, בלי "חורים" במספרים
+  let stepN = 0;
+  const step = (title, body) => `<div class="panel" style="border-right:4px solid var(--brand)">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-      <div style="width:30px;height:30px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800">${n}</div>
+      <div style="width:30px;height:30px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800">${++stepN}</div>
       <h2 style="margin:0">${title}</h2></div>
     ${body}</div>`;
 
@@ -618,14 +649,14 @@ function renderMoneyDate() {
     <div style="display:flex;align-items:center;gap:14px">
       <div style="flex:1">
         <div style="font-size:13px;color:#d7e9e3">📅 הדייט הפיננסי שלך · ${monthName}</div>
-        <div style="font-size:20px;font-weight:700;margin-top:4px">5 דקות, פעם בחודש — ואת יודעת בדיוק איפה את עומדת.</div>
+        <div style="font-size:20px;font-weight:700;margin-top:4px">5 דקות, פעם בחודש — ${G("ואת יודעת בדיוק איפה את עומדת","ואתה יודע בדיוק איפה אתה עומד")}.</div>
         <div style="font-size:13.5px;color:#d7e9e3;margin-top:6px">בלי טבלאות, בלי כאב ראש. פשוט לשבת, לראות, ולהרגיש בשליטה. ☕</div>
       </div>
       ${lemonArt("margarita")}
     </div>
   </div>
 
-  ${step(1, "כמה נכנס והכמה נשאר", `
+  ${step("כמה נכנס וכמה נשאר", `
     <div class="cards" style="margin:6px 0 0">
       <div class="kpi"><div class="lbl">נכנס החודש</div><div class="val" style="font-size:20px">${fmt(act.income)}</div></div>
       <div class="kpi"><div class="lbl">יצא החודש</div><div class="val" style="font-size:20px">${fmt(act.expense)}</div></div>
@@ -633,22 +664,23 @@ function renderMoneyDate() {
     </div>
     ${hasPrev ? `<div class="small" style="margin-top:10px;color:${deltaLeft>=0?'var(--green)':'var(--red)'}">${deltaLeft>=0?'📈':'📉'} לעומת ${monthHeb(prevYm)}: נשאר לך ${fmt(Math.abs(deltaLeft))} ${deltaLeft>=0?'יותר — יפה מאוד!':'פחות'}</div>` : ""}`)}
 
-  ${pr.revenue>0 ? step(2, "כמה באמת נשאר לך", `
+  ${pr.revenue>0 ? step("כמה באמת נשאר לך", `
     <div style="background:var(--brand-soft);border-radius:12px;padding:13px 15px">
       <div style="font-size:15px;color:#47541F">מתוך כל <b>100 ₪</b> שנכנסו — נשאר לך <span style="font-size:24px;font-weight:800">₪${pr.per100}</span></div>
       <div class="small" style="color:#47541F;margin-top:5px">המטרה: להגדיל את המספר הזה. כל שקל שנחזיר = עוד כסף בכיס שלך.</div>
     </div>`) : ""}
 
-  ${sp ? step(3, "כמה לשים בצד למדינה", `
+  ${sp ? step("כמה לשים בצד למדינה", `
     <p class="desc" style="margin-top:0">חלק מהכסף הוא לא באמת שלך — הוא של המדינה. שמים בצד ולא נתפסים.</p>
-    <div style="font-size:22px;font-weight:800;color:var(--accent)">${fmt(sp.perMonth)} <span class="small muted" style="font-weight:400">/ חודש</span></div>`) : ""}
+    <div style="font-size:22px;font-weight:800;color:var(--accent)">${fmt(sp.perMonth)} <span class="small muted" style="font-weight:400">/ חודש</span></div>
+    <div class="small muted" style="margin-top:4px">${sp.src==="actual"?"לפי ההכנסה שנכנסה בפועל":"לפי ההכנסה שהצהרת"}${P().settings.bizType==="patur"?" · בלי מע\"מ — "+G("עוסקת פטורה","עוסק פטור"):""}</div>`) : ""}
 
-  ${sv ? step(4, "כמה לשים בצד לעצמך", `
+  ${sv ? step("כמה לשים בצד לעצמך", `
     <p class="desc" style="margin-top:0">קודם משלמים לעצמך — זה מה שבונה לך עושר.</p>
     <div style="font-size:22px;font-weight:800;color:var(--green)">${fmt(sv.recommend)} <span class="small muted" style="font-weight:400">/ חודש</span></div>
     <div class="small muted" style="margin-top:4px">${sv.doneThisMonth?'✅ כבר עמדת ביעד החודש':'החודש שמת בצד '+fmt(sv.savedThisMonth)}</div>`) : ""}
 
-  ${step(5, "הדבר האחד לחודש הזה", `
+  ${step("הדבר האחד לחודש הזה", `
     <div style="background:#FFF8E8;border:1px solid #F0D98A;border-radius:12px;padding:13px 15px;font-size:15px;color:#7a5c12">
       👉 ${esc(oneThing)}</div>`)}
 
@@ -678,22 +710,22 @@ function renderGrow() {
       <div class="small muted" style="margin-top:8px">ב${g.monthLabel} נכנס: <b>${fmt(g.currentIncome)}</b></div>
       ${g.gap>0 ? `<div style="background:var(--brand-soft);border-radius:12px;padding:12px 14px;margin-top:8px">
         <div style="font-size:15px;color:#47541F">חסר ליעד: <b>${fmt(g.gap)}</b></div>
-        ${g.dealsNeeded!=null?`<div style="font-size:15px;color:#47541F;margin-top:4px">זה בערך <span style="font-size:22px;font-weight:800">${g.dealsNeeded}</span> עסקאות/לקוחות נוספים (לפי ממוצע ${fmt(g.avgDeal)}).</div>`:`<div class="small" style="color:#47541F;margin-top:4px">עדכני "ממוצע עסקה" בהגדרות כדי לראות כמה עסקאות חסרות.</div>`}
+        ${g.dealsNeeded!=null?`<div style="font-size:15px;color:#47541F;margin-top:4px">זה בערך <span style="font-size:22px;font-weight:800">${g.dealsNeeded}</span> עסקאות/לקוחות נוספים (לפי ממוצע ${fmt(g.avgDeal)}).</div>`:`<div class="small" style="color:#47541F;margin-top:4px">${G("עדכני","עדכן")} "ממוצע עסקה" בהגדרות כדי לראות כמה עסקאות חסרות.</div>`}
       </div>` : `<div class="alert green" style="margin-top:8px">🎉 עברת את היעד החודש! מעולה.</div>`}
-    </div>` : `<p class="desc">הגדירי יעד הכנסה חודשי בהגדרות כדי לראות כמה חסר ומה צריך לסגור.</p>`}
+    </div>` : `<p class="desc">${G("הגדירי","הגדר")} יעד הכנסה חודשי בהגדרות כדי לראות כמה חסר ומה צריך לסגור.</p>`}
     <button class="small ghost" onclick="activeTab='income';render()">למנוע הגיוס והלקוחות ←</button>
   </div>
 
-  ${fp.currentAvg>0 ? `<div class="panel" style="border-right:4px solid var(--accent)">
+  ${fp.currentAvg>0 && fp.hasData ? `<div class="panel" style="border-right:4px solid var(--accent)">
     <h2>🏷️ מחיר הרצפה שלך</h2>
-    <p class="desc">המחיר המינימלי ללקוח כדי שתהיה רווחי — מכסה את כל ההוצאות, המס, והנטו שאתה רוצה למשוך.</p>
+    <p class="desc">המחיר המינימלי ללקוח כדי ${G("שתהיי רווחית","שתהיה רווחי")} — מכסה את כל ההוצאות, המס, והנטו ${G("שאת רוצה","שאתה רוצה")} למשוך.</p>
     <div class="cards" style="margin:6px 0">
       <div class="kpi"><div class="lbl">ממוצע העסקה שלך</div><div class="val" style="font-size:20px">${fmt(fp.currentAvg)}</div><div class="hint">${fp.avgAuto?'מחושב אוטומטית מהלקוחות':'מההגדרות'}</div></div>
-      <div class="kpi ${fp.underpriced?'bad':'good'}"><div class="lbl">מחיר רצפה ללקוח</div><div class="val" style="font-size:20px">${fmt(Math.round(fp.floorPerClient))}</div><div class="hint">מינימום כדי להיות רווחי</div></div>
+      <div class="kpi ${fp.underpriced?'bad':'good'}"><div class="lbl">מחיר רצפה ללקוח</div><div class="val" style="font-size:20px">${fmt(Math.round(fp.floorPerClient))}</div><div class="hint">מינימום כדי להיות ${G("רווחית","רווחי")}</div></div>
     </div>
     ${fp.underpriced
-      ? `<div class="alert orange">⚠️ אתה מתמחר נמוך בערך <b>${fmt(Math.round(fp.gap))}</b> ללקוח (${pct(fp.gapPct)}). העלאה קטנה כאן = רווח ישיר לכיס, בלי להביא אף לקוח נוסף.</div>`
-      : `<div class="alert green">✅ הממוצע שלך מעל מחיר הרצפה — אתה מתמחר נכון. יפה!</div>`}
+      ? `<div class="alert orange">⚠️ ${G("את מתמחרת","אתה מתמחר")} נמוך בערך <b>${fmt(Math.round(fp.gap))}</b> ללקוח (${pct(fp.gapPct)}). העלאה קטנה כאן = רווח ישיר לכיס, בלי להביא אף לקוח נוסף.</div>`
+      : `<div class="alert green">✅ הממוצע שלך מעל מחיר הרצפה — ${G("את מתמחרת","אתה מתמחר")} נכון. יפה!</div>`}
     <div class="small muted" style="margin-top:6px">מבוסס על ${fp.active} לקוחות פעילים והעלויות שהגדרת. חישוב הערכה.</div>
   </div>` : ""}
 
@@ -703,11 +735,11 @@ function renderGrow() {
     ${g.topExpenses.length ? `<div class="scrollX"><table>
       <tr><th>קטגוריה</th><th></th><th class="num">ב${g.monthLabel}</th></tr>
       ${g.topExpenses.map(e=>{const unc=e.name==='לא מסווג';return `<tr ${unc?`style="cursor:pointer" onclick="activeTab='cashflow';render()"`:""}>
-        <td>${esc(e.name)}${unc?' <span class="small" style="color:var(--green)">← לחצי לסווג ולגלות מה זה</span>':''}</td>
+        <td>${esc(e.name)}${unc?` <span class="small" style="color:var(--green)">← ${G("לחצי","לחץ")} לסווג ולגלות מה זה</span>`:''}</td>
         <td>${e.tag==='biz'?'<span class="small muted">עסקי</span>':e.tag==='personal'?'<span class="small muted">אישי</span>':''}</td>
         <td class="num neg">${fmt(e.sum)}</td></tr>`;}).join("")}
     </table></div>
-    <div class="small muted" style="margin-top:8px">טיפ: בחרי קטגוריה אחת בלבד לחתוך בה החודש — 10% פחות בקטגוריה הכי גדולה זה כבר ${fmt(Math.round(g.topExpenses[0].sum*0.1))} בכיס.</div>` : `<p class="desc">אין עדיין מספיק תנועות מסווגות החודש.</p>`}
+    <div class="small muted" style="margin-top:8px">טיפ: ${G("בחרי","בחר")} קטגוריה אחת בלבד לחתוך בה החודש — 10% פחות בקטגוריה הכי גדולה זה כבר ${fmt(Math.round(g.topExpenses[0].sum*0.1))} בכיס.</div>` : `<p class="desc">אין עדיין מספיק תנועות מסווגות החודש.</p>`}
     <button class="small ghost" style="margin-top:8px" onclick="activeTab='budgets';render()">לתקציבים ←</button>
   </div>`;
 }
@@ -718,11 +750,11 @@ function renderImpulse() {
   $("tab-impulse").innerHTML = `
   <div class="panel">
     <h2>🛑 רגע לפני שקונים</h2>
-    <p class="desc">לא כדי לוותר — כדי להחליט בראש צלול. כתבי כמה זה עולה, ונראה מה זה אומר בשבילך כבעלת עסק.</p>
+    <p class="desc">לא כדי לוותר — כדי להחליט בראש צלול. ${G("כתבי","כתוב")} כמה זה עולה, ונראה מה זה אומר בשבילך ${G("כבעלת","כבעל")} עסק.</p>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
       <input id="impName" placeholder="על מה? (לא חובה)" style="flex:1;min-width:140px">
       <input id="impAmt" type="number" inputmode="numeric" placeholder="כמה ₪" style="width:120px">
-      <button onclick="runImpulse()">בדקי לי</button>
+      <button onclick="runImpulse()">${G("בדקי","בדוק")} לי</button>
     </div>
   </div>
   <div id="impulseResult"></div>
@@ -800,24 +832,28 @@ function runImpulse() {
       ${r.dealsForGross!=null?`<div class="kpi"><div class="lbl">כדי לממן את זה</div><div class="val" style="font-size:20px">${r.dealsForGross.toFixed(1)}</div><div class="hint">עסקאות (כולל מס)</div></div>`:""}
     </div>
     <div style="background:#EEF6F4;border-radius:12px;padding:13px 15px;margin-bottom:10px">
-      <div style="font-size:14px">💼 כדי שיישאר לך <b>${fmt(r.amount)}</b> לקנייה, אתה בעצם צריך <b>להביא ${fmt(Math.round(r.grossNeeded))}</b> — כי בערך ${pct(r.effRate)} מזה הולך למס. אז זה עולה לך יותר ממה שנראה.</div>
+      <div style="font-size:14px">💼 אם זו קנייה פרטית: כדי שיישאר לך <b>${fmt(r.amount)}</b> ביד, ${G("את בעצם צריכה","אתה בעצם צריך")} <b>להביא ${fmt(Math.round(r.grossNeeded))}</b> — כי בערך ${pct(r.effRate)} ממה שנכנס הולך למדינה. אז זה עולה יותר ממה שנראה. (רכישה עסקית מוכרת? זה סיפור אחר — בקופסה הירוקה 👇)</div>
     </div>
+    ${(function(){ const tb = purchaseTaxBack(p, r.amount); if (!(tb.total > 0)) return "";
+      return `<div style="background:#E7F6EC;border-radius:12px;padding:13px 15px;margin-bottom:10px">
+      <div style="font-size:14px;color:#2e5d3a">🏢 <b>ואם זו רכישה לעסק (הוצאה מוכרת)?</b> המדינה משתתפת איתך: יחזרו אליך בערך <b>${fmt(Math.round(tb.total))}</b> — מע"מ ${fmt(Math.round(tb.vatBack))} + מס הכנסה ${fmt(Math.round(tb.itBack))} + ביטוח לאומי ${fmt(Math.round(tb.niBack))}. כלומר העלות האמיתית: בערך <b>${fmt(Math.round(tb.realCost))}</b> במקום ${fmt(r.amount)}. (שווה לוודא עם רו"ח שההוצאה אכן מוכרת.)</div>
+    </div>`; })()}
     ${r.goalTradeoff ? `<div style="background:var(--brand-soft);border-radius:12px;padding:13px 15px;margin-bottom:10px">
-      <div style="font-size:14px;color:#47541F">${r.goalTradeoff.icon||"🎯"} או שתשים את הסכום לעבר <b>${esc(r.goalTradeoff.name)}</b> — ותגיע לשם בערך <b>${r.goalTradeoff.monthsEarlier} חודשים מוקדם יותר</b>.</div>
+      <div style="font-size:14px;color:#47541F">${r.goalTradeoff.icon||"🎯"} או ${G("שתשימי","שתשים")} את הסכום לעבר <b>${esc(r.goalTradeoff.name)}</b> — ${G("ותגיעי","ותגיע")} לשם בערך <b>${r.goalTradeoff.monthsEarlier} חודשים מוקדם יותר</b>.</div>
     </div>` : ""}
     <div style="background:#EEF6F4;border-radius:12px;padding:13px 15px">
-      <div style="font-size:14px">💡 ואם במקום זה היית משקיעה את הסכום — בעוד 10 שנים זה יכול להיות <b>${fmt(r.invest10)}</b>.</div>
+      <div style="font-size:14px">💡 ואם במקום זה ${G("היית משקיעה","היית משקיע")} את הסכום — בעוד 10 שנים זה יכול להיות <b>${fmt(r.invest10)}</b>.</div>
     </div>
     <div class="panel" style="margin:12px 0 0;background:#FFF8E8;border:1px solid #F0D98A">
       <div style="font-size:14px;font-weight:600;color:#7a5c12;margin-bottom:6px">3 שאלות קטנות לפני שמחליטים:</div>
       <div style="font-size:13.5px;line-height:1.9;color:#7a5c12">
-        1. אני צריכה את זה עכשׁו, או שזה סתם מתחשק?<br>
+        1. אני ${G("צריכה","צריך")} את זה עכשיו, או שזה סתם מתחשק?<br>
         2. יש חלופה טובה שעולה פחות?<br>
         3. אם אחכה 48 שעות — עדיין ארצה את זה?</div>
     </div>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-      <button onclick="saveWish('${esc(name).replace(/'/g,"")}', ${r.amount})">⏳ שמור להחלטה (48 שעות)</button>
-      <span class="small muted" style="align-self:center">אם אחרי הכל בא לך — קני בשמחה, בלי אשמה. 💚</span>
+      <button onclick="saveWish('${esc(name).replace(/'/g,"")}', ${r.amount})">⏳ ${G("שמרי","שמור")} להחלטה (48 שעות)</button>
+      <span class="small muted" style="align-self:center">אם אחרי הכל בא לך — ${G("קני","קנה")} בשמחה, בלי אשמה. 💚</span>
     </div>
   </div>`;
 }
@@ -845,21 +881,30 @@ function obFinish() {
   if (a.gender) p.settings.gender = a.gender;
   if (a.accounts) p.settings.accountsSetup = a.accounts;   // sep = חשבון עסקי+פרטי נפרדים
   if (a.bizType && ["patur", "morasheh", "baam"].includes(a.bizType)) p.settings.bizType = a.bizType;
+  else if (a.bizType === "none") p.settings.bizType = "patur";   // עוד אין עסק — בלי דרישות מע"מ
   const revGoal = { "0-20": 20000, "20-50": 40000, "50-100": 70000, "100+": 110000 };
   if (a.revenue && revGoal[a.revenue]) p.settings.goalMonthlyIncome = revGoal[a.revenue];
   if (a.incomeGoal > 0) p.settings.goalMonthlyIncome = a.incomeGoal;      // יעד מדויק גובר על הטווח
   if (a.avgDeal > 0) p.settings.avgDealSize = a.avgDeal;                  // מזין את מנוע הצמיחה ומחיר הרצפה
+  // מקדמות ותשלומי מדינה מהשאלון (אופציונלי — אם לא מולא, מזהים מהבנק)
+  if (a.mikdamaPct > 0 && p.settings.bizType !== "patur") {
+    p.settings.mikdamaRate = a.mikdamaPct / 100;
+    p.settings.mikdamaFreq = a.mikdamaFreq || "2m";
+  }
+  if (a.blAdvance > 0) p.settings.blMonthlyAdvance = a.blAdvance;
   // המוצר המרכזי מהשאלון → נכנס למוצרים ושירותים (הכנסות מול עלויות לכל מוצר)
   if (a.mainProduct && !(p.products || []).some(x => x.name === a.mainProduct)) {
     p.products.push({ id: uid(), name: a.mainProduct, price: a.mainProductPrice || a.avgDeal || 0, unitCost: a.mainProductCost || 0 });
     if (!(a.avgDeal > 0) && a.mainProductPrice > 0) p.settings.avgDealSize = a.mainProductPrice;
   }
-  p.goals = (a.goals && a.goals.length) ? a.goals : defaultGoals();
+  p.goals = (a.goals && a.goals.length) ? a.goals : defaultGoals(a.monthlyIncome);
   if (a.freedomMonthly > 0 && p.freedomPlan) p.freedomPlan.annualSpendTarget = a.freedomMonthly * 12;
-  // הכנסה חודשית מהשאלון → נכנסת כהכנסה קבועה, כדי שהתזרים והמסים יעבדו מהרגע הראשון
+  // הכנסה חודשית מהשאלון → נכנסת כהכנסה קבועה, כדי שהתזרים, התחזית והמסים יעבדו מהרגע הראשון
   if (a.monthlyIncome > 0 && !(p.recurring || []).some(r => r.kind === "income")) {
     p.recurring.push({ id: uid(), name: "הכנסה חודשית (מהשאלון — אפשר לדייק)", day: 10, amount: a.monthlyIncome, kind: "income", vatInclusive: true, note: "" });
   }
+  // מקור אחד לאמת: התקציבים הם רק מה שהמשתמש הזין בשאלון — מאפסים כל ברירת מחדל קודמת
+  p.categories.forEach(c => { c.budget = 0; });
   (a.budgets || []).forEach(b => {
     if (!b.name || !(b.amount > 0)) return;
     const c = p.categories.find(x => x.name === b.name);
@@ -878,7 +923,8 @@ function obChipMulti(k, val, label) {
 }
 function renderOnboarding() {
   const p = P(), a = p.onboarding.answers;
-  if (!a.goals) { a.goals = defaultGoals(); }
+  // היעדים נוצרים רק כשמגיעים לשלב היעדים — אז כבר יודעים את ההכנסה, וקרן הביטחון מותאמת אליה
+  if (!a.goals && obStep >= 6) { a.goals = defaultGoals(a.monthlyIncome); }
   const total = 10;
   if (!a.budgets) a.budgets = [
     { name: "סופר וקניות לבית", amount: 1800 }, { name: "חשבונות", amount: 700 },
@@ -908,15 +954,15 @@ function renderOnboarding() {
         <p class="desc">2 דקות, ואני תופר לך את האפליקציה בדיוק עליך — על העסק, על מה שהכי כואב, ועל החלום. אחר כך אני עושה את רוב העבודה בשבילך.</p>
         <div style="font-size:13.5px;font-weight:700;margin:14px 0 8px">רגע לפני — איך לפנות אליך? 😊</div>
         <div style="display:flex;gap:9px;max-width:340px;margin:0 auto">
-          <button onclick="obA().gender='f';save();obNext()" style="flex:1;color:#1C1C1C;box-shadow:none;border:${a.gender==='f'?'2px solid #1C1C1C':'1px solid var(--line)'};background:${a.gender==='f'?'#FFD600':'#fff'};border-radius:13px;padding:12px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">בלשון נקבה 👩</button>
-          <button onclick="obA().gender='m';save();obNext()" style="flex:1;color:#1C1C1C;box-shadow:none;border:${a.gender==='m'?'2px solid #1C1C1C':'1px solid var(--line)'};background:${a.gender==='m'?'#FFD600':'#fff'};border-radius:13px;padding:12px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">בלשון זכר 👨</button>
+          <button onclick="obA().gender='f';P().settings.gender='f';save();obNext()" style="flex:1;color:#1C1C1C;box-shadow:none;border:${a.gender==='f'?'2px solid #1C1C1C':'1px solid var(--line)'};background:${a.gender==='f'?'#FFD600':'#fff'};border-radius:13px;padding:12px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">בלשון נקבה 👩</button>
+          <button onclick="obA().gender='m';P().settings.gender='m';save();obNext()" style="flex:1;color:#1C1C1C;box-shadow:none;border:${a.gender==='m'?'2px solid #1C1C1C':'1px solid var(--line)'};background:${a.gender==='m'?'#FFD600':'#fff'};border-radius:13px;padding:12px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">בלשון זכר 👨</button>
         </div>
         <button class="ghost small" style="margin-top:14px" onclick="P().onboarding.done=true;activeTab='home';save();render()">כבר יש לי הכל — דלג לאפליקציה ←</button></div>`;
       return $("tab-onboarding").innerHTML = wrap(inner, {});
     case 1:
       inner = H("איזה סוג עסק יש לך?") + sub("זה קובע איך אחשב לך את המס — הכי מדויק שאפשר.") +
-        col(obChip("bizType", "patur", "עוסק פטור", a.bizType === "patur") +
-            obChip("bizType", "morasheh", "עוסק מורשה", a.bizType === "morasheh") +
+        col(obChip("bizType", "patur", G("עוסקת פטורה","עוסק פטור") + ` <span style="font-weight:400;font-size:12.5px;color:#6b6b6b">— בלי מע"מ, למחזור שנתי עד ~123 אלף ₪</span>`, a.bizType === "patur") +
+            obChip("bizType", "morasheh", G("עוסקת מורשה","עוסק מורשה") + ` <span style="font-weight:400;font-size:12.5px;color:#6b6b6b">— ${G("גובה","גובה")} מע"מ מהלקוחות ${G("ומקזזת","ומקזז")} על הוצאות</span>`, a.bizType === "morasheh") +
             obChip("bizType", "baam", "חברה בע\"מ", a.bizType === "baam") +
             obChip("bizType", "none", "עוד לא פתחתי עסק", a.bizType === "none")) +
         `<div style="background:#fff;border:1px solid var(--line);border-radius:13px;padding:11px 13px;margin-top:10px">
@@ -944,7 +990,7 @@ function renderOnboarding() {
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:13px;min-width:170px">כמה שווה לך עסקה/לקוח ממוצע?</span><span class="muted">₪</span>
           <input type="number" value="${a.avgDeal || ""}" placeholder="למשל 2,500" onchange="obA().avgDeal=Number(this.value)||0;save()" style="width:110px"><span class="small muted">בחודש</span></div>
           <div style="display:flex;align-items:center;gap:8px"><span style="font-size:13px;min-width:170px">לכמה בחודש בא לך להגיע?</span><span class="muted">₪</span>
-          <input type="number" value="${a.incomeGoal || ""}" placeholder="למשל 40,000" onchange="obA().incomeGoal=Number(this.value)||0;save()" style="width:110px"></div>
+          <input type="number" value="${a.incomeGoal || ""}" placeholder="40,000" onchange="obA().incomeGoal=Number(this.value)||0;save()" style="width:130px"></div>
           ${a.avgDeal>0 && a.incomeGoal>0 && a.monthlyIncome>0 ? `<div style="margin-top:8px;font-size:13.5px;color:#8a6a00;font-weight:700">✨ כלומר: כדי להגיע ליעד חסרים לך בערך ${Math.max(0,Math.ceil((a.incomeGoal-a.monthlyIncome)/a.avgDeal))} לקוחות/עסקאות בחודש. את זה נעזור לך להשיג.</div>`:""}
         </div>
         <div style="background:#fff;border:1px solid var(--line);border-radius:13px;padding:11px 13px;margin-top:10px">
@@ -955,15 +1001,18 @@ function renderOnboarding() {
             <span class="muted">עלות ₪</span><input type="number" value="${a.mainProductCost||""}" placeholder="0" onchange="obA().mainProductCost=Number(this.value)||0;save()" style="width:80px">
           </div>
           <div class="small muted" style="margin-top:5px">עלות = מה שיוצא לך על כל עסקה כזאת (חומרים, ספקים, עמלות). ככה נראה לך כמה באמת נשאר מכל מוצר — לא רק כמה נכנס.</div>
-        </div>`;
+        </div>
+        ${(a.bizType === "morasheh" || a.bizType === "baam") ? `<div style="background:var(--brand-soft);border-radius:13px;padding:11px 13px;margin-top:10px">
+          <div style="font-size:13px;color:#47541F">🏛️ <b>ומה עם מקדמות המס והביטוח הלאומי?</b> כלום — אנחנו נזהה אותם לבד מחשבון הבנק שלך, לפי התשלומים של החודשים האחרונים. אפס טפסים 😊</div>
+        </div>` : ""}`;
       return $("tab-onboarding").innerHTML = wrap(inner);
     case 3:
-      inner = H("מה הכי כואב לך עכשׁו?") + sub("זה יקבע מה יופיע לך ראשון במסך הבית.") +
-        col(obChip("pain", "left", "💸 לא יודע/ת כמה באמת נשאר לי", a.pain === "left") +
-            obChip("pain", "tax", "🧾 אני לא עוקב/ת אחרי המס — ולא יודע/ת כמה צפוי לרדת", a.pain === "tax") +
-            obChip("pain", "cash", "🌊 אני לא יודע/ת כמה כסף נשאר לי אחרי כל ההוצאות", a.pain === "cash") +
-            obChip("pain", "invoices", "📥 רודף/ת אחרי חשבוניות", a.pain === "invoices") +
-            obChip("pain", "grow", "📈 רוצה לגדול, לא יודע/ת איך", a.pain === "grow") +
+      inner = H("מה הכי כואב לך עכשיו?") + sub("זה יקבע מה יופיע לך ראשון במסך הבית.") +
+        col(obChip("pain", "left", `💸 לא ${G("יודעת","יודע")} כמה באמת נשאר לי`, a.pain === "left") +
+            obChip("pain", "tax", `🧾 אני לא ${G("עוקבת","עוקב")} אחרי המס — ולא ${G("יודעת","יודע")} כמה צפוי לרדת`, a.pain === "tax") +
+            obChip("pain", "cash", "🌊 התזרים לא יציב — פעם יש, פעם אין", a.pain === "cash") +
+            obChip("pain", "invoices", `📥 ${G("רודפת","רודף")} אחרי חשבוניות`, a.pain === "invoices") +
+            obChip("pain", "grow", `📈 רוצה לגדול, לא ${G("יודעת","יודע")} איך`, a.pain === "grow") +
             obChip("pain", "price", "🏷️ התמחור שלי נמוך מדי", a.pain === "price"));
       return $("tab-onboarding").innerHTML = wrap(inner);
     case 4:
@@ -975,13 +1024,13 @@ function renderOnboarding() {
             obChipMulti("focus", "coach", "💬 ליווי אישי של מאמן פיננסי"));
       return $("tab-onboarding").innerHTML = wrap(inner, { next: "obNext()" });
     case 5:
-      inner = H("כמה בא לך להתעסק?") + sub("אני יכול לעשות כמעט הכל בשבילך — אתה בוחר את הקצב.") +
+      inner = H("כמה בא לך להתעסק?") + sub(`אני יכול לעשות כמעט הכל בשבילך — ${G("את בוחרת","אתה בוחר")} את הקצב.`) +
         col(obChip("involve", "auto", "😌 תעשו הכל בשבילי", a.involve === "auto") +
-            obChip("involve", "see", "👀 אוהב/ת לראות ולהחליט", a.involve === "see") +
-            obChip("involve", "control", "🎛️ שולט/ת בכל פרט", a.involve === "control"));
+            obChip("involve", "see", `👀 ${G("אוהבת","אוהב")} לראות ולהחליט`, a.involve === "see") +
+            obChip("involve", "control", `🎛️ ${G("שולטת","שולט")} בכל פרט`, a.involve === "control"));
       return $("tab-onboarding").innerHTML = wrap(inner);
     case 6:
-      inner = H("בוא נבנה לך יעדים 🎯") + sub("קצר, בינוני ורחוק. שמתי ברירת מחדל — שני/י את הסכומים אם בא לך, או פשוט המשך.") +
+      inner = H(`${G("בואי","בוא")} נבנה לך יעדים 🎯`) + sub(`קצר, בינוני ורחוק. שמתי ברירת מחדל לפי מה שסיפרת לי — ${G("שני","שנה")} את הסכומים אם בא לך, או פשוט ${G("המשיכי","המשך")}.`) +
         `<div style="display:flex;flex-direction:column;gap:10px">
           ${a.goals.map((g, i) => `<div style="background:#fff;border:1px solid var(--line);border-radius:13px;padding:11px 13px">
             <div style="font-size:12px;color:var(--muted)">${g.horizon === 'short' ? 'קצר טווח (עד שנה) — למשל קרן ביטחון' : g.horizon === 'mid' ? 'בינוני (1–3 שנים) — רכב, בית, שדרוג לייפסטייל' : 'רחוק (5–15 שנים) — חופש כלכלי'}</div>
@@ -1017,7 +1066,7 @@ function renderOnboarding() {
         </div>`;
       return $("tab-onboarding").innerHTML = wrap(inner, { next: "obNext()" });
     case 7:
-      inner = H("עכשׁו בואי נתקצב יחד 🎈") +
+      inner = H(`עכשיו ${G("בואי","בוא")} נתקצב יחד 🎈`) +
         sub("שאלה חמודה: כמה בערך בא לך לשים בצד כל חודש לכל דבר? זה לא מחייב — נתחיל ממשהו, ותמיד נעדכן. 😊") +
         `<div style="display:flex;flex-direction:column;gap:8px">
           ${a.budgets.map((b, i) => `<div style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px">
@@ -1033,16 +1082,16 @@ function renderOnboarding() {
         </div>`;
       return $("tab-onboarding").innerHTML = wrap(inner, { next: "obNext()" });
     case 8:
-      inner = H("רוצה עדכונים בוואטסאפ? 💬") + sub("תזכורות עדינות ותובנות — רק דברים שחשוב שתדע. בלי ספאם.") +
+      inner = H("רוצה עדכונים בוואטסאפ? 💬") + sub(`תזכורות עדינות ותובנות — רק דברים שחשוב ${G("שתדעי","שתדע")}. בלי ספאם.`) +
         col(obChip("whatsapp", "yes", "✅ כן, שלחו לי", a.whatsapp === "yes") +
-            obChip("whatsapp", "no", "לא עכשׁו", a.whatsapp === "no"));
+            obChip("whatsapp", "no", "לא עכשיו", a.whatsapp === "no"));
       return $("tab-onboarding").innerHTML = wrap(inner);
     case 9:
       const focusTxt = { order: "סדר בכסף", keep: "כמה באמת נשאר לך", tax: "חיסכון במס", grow: "צמיחה", coach: "ליווי אישי" };
       const chosen = (a.focus || ["keep"]).map(f => focusTxt[f]).filter(Boolean);
       inner = `<div style="text-align:center;padding:6px 0">${lemonSVG}
-        <h2 style="margin:10px 0 4px;color:var(--brand)">מוכן! תפרתי לך את Soleo 🍋</h2>
-        <p class="desc">מעכשׁו האפליקציה מותאמת בדיוק לך:</p>
+        <h2 style="margin:10px 0 4px;color:var(--brand)">הכל מוכן! תפרתי לך את Soleo 🍋</h2>
+        <p class="desc">מעכשיו האפליקציה מותאמת בדיוק לך:</p>
         <div style="display:flex;flex-direction:column;gap:7px;text-align:right;max-width:340px;margin:0 auto">
           <div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">🎯 נתמקד ב: <b>${chosen.join(" · ") || "כמה באמת נשאר לך"}</b></div>
           <div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">🧾 נשמור לך על: <b>מס חכם — כמה חוזר מכל הוצאה</b></div>
@@ -1051,7 +1100,7 @@ function renderOnboarding() {
           ${a.accounts==='sep'?`<div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">💵 נגדיר לך <b>משכורת קבועה מהעסקי לפרטי</b> — כמו שכיר, בלי בלגן בין החשבונות</div>`:""}
           ${a.freedomMonthly>0?`<div style="background:#FFF6D9;border:1px solid #F0D98A;border-radius:11px;padding:9px 12px">🌴 מספר החופש שלך: <b>${fmt(a.freedomMonthly*12*25)}</b><div class="small" style="color:#6d5c00;margin-top:2px">הון שמניב לך ${fmt(a.freedomMonthly)} בחודש בלי לעבוד (כלל ה-4%). נבנה את הדרך לשם צעד-צעד — במסך "תוכנית חופש".</div></div>`:""}
         </div></div>`;
-      return $("tab-onboarding").innerHTML = wrap(inner, { next: "obFinish()", nextLabel: "בוא נתחיל! 🚀" });
+      return $("tab-onboarding").innerHTML = wrap(inner, { next: "obFinish()", nextLabel: `${G("בואי","בוא")} נתחיל! 🚀` });
   }
 }
 
@@ -1088,7 +1137,7 @@ function renderGoals() {
       <div style="display:flex;align-items:center;gap:14px">
         <div style="flex:1">
           <h2 style="margin:0;color:#fff">🎯 היעדים שלך</h2>
-          <p class="desc" style="color:#d7e9e3;margin:4px 0 0">כל חודש את מפרישה לעצמך בערך <b>${fmt(gp.monthlySaving)}</b>. הנה לאן זה לוקח אותך — ומה צריך כדי להגיע מהר יותר.</p>
+          <p class="desc" style="color:#d7e9e3;margin:4px 0 0">כל חודש ${G("את מפרישה","אתה מפריש")} לעצמך בערך <b>${fmt(gp.monthlySaving)}</b>. הנה לאן זה לוקח אותך — ומה צריך כדי להגיע מהר יותר.</p>
         </div>
         ${lemonArt("hammock")}
       </div>
@@ -1123,7 +1172,7 @@ function renderPipeline() {
   <div class="cards">
     <div class="kpi"><div class="lbl">עסקאות פתוחות</div><div class="val">${pp.open}</div></div>
     <div class="kpi"><div class="lbl">שווי הצנרת</div><div class="val" style="font-size:20px">${fmt(pp.totalOpen)}</div><div class="hint">חודשי</div></div>
-    <div class="kpi good"><div class="lbl">צפוי להיסגר</div><div class="val" style="font-size:20px">${fmt(Math.round(pp.weighted))}</div><div class="hint">משוקלל לפי שלב</div></div>
+    <div class="kpi good"><div class="lbl">צפוי להיסגר</div><div class="val" style="font-size:20px">${fmt(Math.round(pp.weighted))}</div><div class="hint">לפי סיכוי הסגירה של כל שלב (ליד 20% · פגישה 40% · הצעה 60%)</div></div>
   </div>
 
   ${pp.gap > 0 ? `<div class="panel" style="border-right:4px solid var(--accent)">
@@ -1168,7 +1217,7 @@ function renderActions() {
       <div style="flex:1">
         <div style="font-size:12.5px;color:#FFD600">✅ מה לעשות</div>
         <div style="font-size:18px;font-weight:700;margin-top:3px">${acts.length ? `יש לך ${acts.length} דברים שכדאי לעשות — לפי סדר חשיבות.` : "הכל מסודר כרגע — אין מה לעשות. כל הכבוד! 🎉"}</div>
-        <div style="font-size:13px;color:#c7cfdb;margin-top:5px">אני מנהל בשבילך — את רק צריכה לפעול לפי הצעדים.</div>
+        <div style="font-size:13px;color:#c7cfdb;margin-top:5px">אני מנהל בשבילך — ${G("את רק צריכה","אתה רק צריך")} לפעול לפי הצעדים.</div>
       </div>
       ${lemonArt("coconut")}
     </div>
@@ -1191,7 +1240,7 @@ function renderActions() {
         ${a.cta ? `<button class="small ghost" style="margin-top:8px" onclick="activeTab='${a.cta}';render()">${esc(a.ctaTxt)} ←</button>` : ""}
       </div>
     </div></div>`).join("")}
-  <div class="panel" style="background:var(--brand-soft);border:none"><div class="small" style="color:#47541F">💬 בקרוב — כל אלה יגיעו אלייך גם כהודעות עדינות בוואטסאפ, שלא תצטרכי אפילו להיכנס.</div></div>`;
+  <div class="panel" style="background:var(--brand-soft);border:none"><div class="small" style="color:#47541F">💬 בקרוב — כל אלה יגיעו ${G("אלייך","אליך")} גם כהודעות עדינות בוואטסאפ, ${G("שלא תצטרכי","שלא תצטרך")} אפילו להיכנס.</div></div>`;
 }
 
 /* ========== 1. תזרים שוטף ========== */
@@ -1225,7 +1274,7 @@ function renderCashflow() {
     <div class="kpi good"><div class="lbl">נכנס החודש</div><div class="val">${fmt(act.income)}</div></div>
     <div class="kpi"><div class="lbl">יצא החודש</div><div class="val">${fmt(act.expense)}</div></div>
     <div class="kpi ${leftover >= 0 ? "good" : "bad"}"><div class="lbl">נשאר</div><div class="val">${fmt(leftover)}</div>
-      <div class="hint">יעד חיסכון: ${fmt(p.settings.goalMonthlySavings)}</div></div>
+      ${p.settings.goalMonthlySavings > 0 ? `<div class="hint">יעד חיסכון: ${fmt(p.settings.goalMonthlySavings)}</div>` : ""}</div>
     <div class="kpi"><div class="lbl">תנועות החודש</div><div class="val">${act.count}</div></div>
   </div>
 
@@ -1252,7 +1301,7 @@ function renderCashflow() {
       <tr><th>תאריך</th><th>תיאור</th><th>קטגוריה</th><th>סכום</th><th>שירת מטרה?</th><th></th></tr>
       ${txs.map(t => `<tr>
         <td class="num">${t.date}</td>
-        <td>${esc(t.desc)} ${t.source === "bank" ? '<span class="small muted">· בנק</span>' : ""}${t.transfer ? ' <span class="small" style="color:#6a7ec2;font-weight:700" title="העברה בין החשבונות שלך — לא נספרת כהכנסה או הוצאה">⇄ העברה בין חשבונות</span>' : ""}${(function(){const c=p.categories.find(c=>c.id===t.categoryId);return c&&c.deductible&&t.amount<0?' <span class="small" style="color:var(--green);font-weight:700" title="נספרת מול רואה החשבון ומקטינה מס">✓ הוצאה מוכרת</span>':"";})()}${hfbIds.has(t.id) ? ' <span class="small" style="color:#c2410c;font-weight:700" title="הוצאה של הבית שיצאה מהחשבון העסקי — כדאי להעביר לחשבון הבית">🔀 הוצאת בית מהעסקי</span>' : ""}${(function(){ if (!(t.amount > 0) || t.transfer || t.categoryId || isRefundTx(t)) return "";
+        <td>${esc(t.desc)} ${t.source === "bank" ? '<span class="small muted">· בנק</span>' : ""}${t.transfer ? ' <span class="small" style="color:#6a7ec2;font-weight:700" title="העברה בין החשבונות שלך — לא נספרת כהכנסה או הוצאה">⇄ העברה בין חשבונות</span>' : ""}${t.stateTax ? ' <span class="small" style="color:#7a5c12;font-weight:700" title="מקדמות מס / מע&quot;מ / ביטוח לאומי — תשלום לרשויות. לא נספר כהוצאה מוכרת ולא בקיזוז מע&quot;מ">🏛️ תשלום למדינה</span>' : ""}${(function(){const c=p.categories.find(c=>c.id===t.categoryId);return c&&c.deductible&&t.amount<0?' <span class="small" style="color:var(--green);font-weight:700" title="נספרת מול רואה החשבון ומקטינה מס">✓ הוצאה מוכרת</span>':"";})()}${hfbIds.has(t.id) ? ' <span class="small" style="color:#c2410c;font-weight:700" title="הוצאה של הבית שיצאה מהחשבון העסקי — כדאי להעביר לחשבון הבית">🔀 הוצאת בית מהעסקי</span>' : ""}${(function(){ if (!(t.amount > 0) || t.transfer || t.categoryId || isRefundTx(t)) return "";
           if (isInstitutionIncome(t)) return `<div class="small" style="color:#3d6a3d;margin-top:2px">🛡️ הכנסה ממוסדות (ביטוח לאומי / מס) — <b>בלי הפרשת מס</b> <button class="ghost" style="padding:1px 8px;font-size:11px" onclick="setTaxExempt('${t.id}',false)">בעצם הכנסה עסקית?</button></div>`;
           const ia = incomeAside(p, t.amount); return `<div class="small" style="color:#7a5c12;margin-top:2px">🏛️ מזה לשים בצד למדינה ~<b>${fmt(ia.aside)}</b> · 💚 נשאר באמת ~<b>${fmt(ia.left)}</b> <button class="ghost" style="padding:1px 8px;font-size:11px" onclick="setTaxExempt('${t.id}',true)">לא עסקית? (בלי מס)</button></div>`; })()}</td>
         <td><select onchange="classifyTx('${t.id}', this.value)">
@@ -1269,8 +1318,9 @@ function renderCashflow() {
     <div class="addLine">
       <div><label>תאריך</label><input type="date" id="txDate" value="${viewMonth}-15"></div>
       <div><label>תיאור</label><input type="text" id="txDesc" placeholder="למשל: סופר יוחננוף"></div>
-      <div><label>סכום (מינוס = הוצאה)</label><input type="number" id="txAmount" placeholder="-250"></div>
-      <div><label>קטגוריה</label><select id="txCat"><option value="">—</option>
+      <div><label>סוג</label><select id="txKind"><option value="expense">📤 הוצאה</option><option value="income">📥 הכנסה (תשלום מלקוח וכו')</option></select></div>
+      <div><label>סכום (₪)</label><input type="number" id="txAmount" placeholder="250"></div>
+      <div><label>קטגוריה (להוצאה)</label><select id="txCat"><option value="">—</option>
         ${catOptionsHTML(p, "")}</select></div>
       <button onclick="addTx()">+ הוספה</button>
     </div>
@@ -1279,14 +1329,24 @@ function renderCashflow() {
 function setTaxExempt(id, val) { const t = P().transactions.find(t => t.id === id); if (t) t.taxExempt = val; render(); }
 function toggleTransferManual(id) {
   const t = P().transactions.find(t => t.id === id);
-  if (t) { t.transferManual = !t.transferManual; tagSelfTransfers(P()); }
+  if (t) {
+    t.transferManual = !t.transferManual;
+    markTransferPair(P(), t);      // מסמן אוטומטית גם את הצד השני של ההעברה — לחיצה אחת מספיקה
+    tagSelfTransfers(P());
+  }
   render();
 }
 function addTx() {
-  const amount = Number($("txAmount").value);
+  let amount = Number($("txAmount").value);
   if (!$("txDate").value || !amount) return alert("צריך תאריך וסכום");
+  // בוחרים "הכנסה/הוצאה" במקום לזכור מינוס. מי שבכל זאת הקליד מינוס — נשמר כהוצאה.
+  const kind = ($("txKind") || {}).value || "expense";
+  amount = kind === "income" ? Math.abs(amount) : -Math.abs(amount);
+  const cat = kind === "income" ? null : ($("txCat").value || null);   // הכנסה לא משויכת לקטגוריית הוצאה
   P().transactions.push({ id: uid(), date: $("txDate").value, desc: $("txDesc").value,
-    amount, categoryId: $("txCat").value || null, source: "manual", account: "" });
+    amount, categoryId: cat, source: "manual", account: "" });
+  tagSelfTransfers(P());   // אם זו העברה בין חשבונות — מזוהה מיד, לא נספרת כהכנסה
+  tagStateTaxes(P());      // אם זה תשלום למדינה — מסומן 🏛️ ולא נספר כהוצאה מוכרת
   render();
 }
 function delTx(id) { P().transactions = P().transactions.filter(t => t.id !== id); render(); }
@@ -1308,12 +1368,26 @@ function classifyTx(id, catId) {
 /* ========== תזרים צפוי ========== */
 const HEB_DAYS = ["א'","ב'","ג'","ד'","ה'","ו'","ש'"];
 function shortDate(d){ return `${d.getDate()}/${d.getMonth()+1}`; }
+/* לוח תשלומי המדינה הצפויים (ב"ל · מע"מ · מקדמות) — משותף לבית ולתזרים הצפוי */
+function statePaymentsBoardHTML(p) {
+  let stateUp = [];
+  try { stateUp = upcomingStatePayments(p, 3); } catch (e) {}
+  if (!stateUp.length) return "";
+  return `<div style="font-weight:700;font-size:13.5px;margin-bottom:6px">🏛️ תשלומי המדינה הקרובים (עד ה-15 בחודש):</div>
+    ${stateUp.map(sp=>`<div style="background:#FFF8E8;border:1px solid #F0D98A;border-radius:11px;padding:9px 13px;margin-bottom:6px;font-size:13.5px;color:#7a5c12">
+      🏛️ <b>${sp.date.getDate()}.${sp.date.getMonth()+1}</b> — ${sp.items.map(i=>`${esc(i.label)} ~<b>${fmt(Math.round(i.amount))}</b>`).join(" + ")}
+      <span style="float:left;font-weight:800">${fmt(Math.round(sp.total))}</span></div>`).join("")}
+    <div class="small muted">הערכה חיה מהבנק — מתעדכנת עם כל תנועה וסיווג. את הסכום המדויק קובעים הדיווחים אצל הרו"ח.</div>`;
+}
 function renderCashforecast() {
   const p = P();
   const cf = projectedCashflow(p, 34);
 
   $("tab-cashforecast").innerHTML = `
-  ${!cf.hasBank?`<div class="alert orange">🟠 עדיין אין יתרת בנק מסונכרנת — התחזית מתחילה מ-0. הריצי "סנכרן עכשיו" כדי שהיתרה האמיתית תיכנס.</div>`:""}
+  <div class="panel" style="background:var(--brand-soft);border:none;padding:10px 15px">
+    <div class="small" style="color:#47541F">🔮 <b>תחזית</b> — לפי ההכנסות וההוצאות הקבועות שהגדרת (לא כסף שנכנס בפועל). אפשר לעדכן אותן למטה.</div>
+  </div>
+  ${!cf.hasBank?`<div class="alert orange">🟠 עדיין אין יתרת בנק — התחזית מתחילה מיתרת הפתיחה שבהגדרות (${fmt(cf.bal0)}). ${advisorLocalSetup()?`${G("הריצי","הרץ")} "סנכרן עכשיו" כדי שהיתרה האמיתית תיכנס.`:`אפשר לעדכן אותה במסך ההגדרות.`}</div>`:""}
   <div class="cards">
     <div class="kpi"><div class="lbl">יתרה היום</div><div class="val">${fmt(cf.bal0)}</div></div>
     <div class="kpi ${cf.low.bal<0?'bad':cf.low.bal<3000?'warn':'good'}"><div class="lbl">🔴 נקודה נמוכה</div><div class="val">${fmt(cf.low.bal)}</div>
@@ -1322,8 +1396,14 @@ function renderCashforecast() {
     <div class="kpi good"><div class="lbl">💚 באמת שלך (אחרי מע"מ+מס)</div><div class="val">${fmt(cf.realYours)}</div></div>
   </div>
 
-  ${cf.low.bal<0?`<div class="alert red">🔴 שימי לב! בתאריך ${shortDate(cf.low.date)} היתרה צפויה לרדת למינוס (${fmt(cf.low.bal)}). כדאי לדחות הוצאה או להקדים הכנסה.</div>`
+  ${cf.low.bal<0?`<div class="alert red">🔴 ${G("שימי","שים")} לב! בתאריך ${shortDate(cf.low.date)} היתרה צפויה לרדת למינוס (${fmt(cf.low.bal)}). כדאי לדחות הוצאה או להקדים הכנסה.</div>`
     :`<div class="alert green">✓ לא צפוי מינוס. הנקודה הנמוכה: ${fmt(cf.low.bal)} ב-${shortDate(cf.low.date)}.</div>`}
+
+  ${(function(){ const sb = statePaymentsBoardHTML(p); return sb ? `<div class="panel" style="border-right:4px solid var(--accent)">
+    <h2>🏛️ לוח תשלומי המדינה הצפוי</h2>
+    <p class="desc">מה שהולך לרדת לרשויות ומתי — כדי שהכסף יחכה מוכן בצד. תשלומים שנופלים בתוך החודש הקרוב מופיעים גם בטבלה למטה.</p>
+    ${sb}
+  </div>` : ""; })()}
 
   <div class="panel">
     <h2>הכסף שלך — החודש הקרוב</h2>
@@ -1331,7 +1411,7 @@ function renderCashforecast() {
     <div class="scrollX"><table>
       <tr><th>תאריך</th><th>תנועה</th><th>סכום</th><th>יתרה אחרי</th></tr>
       ${cf.events.map(e=>{const isLow=e.running===cf.low.bal;
-        return `<tr ${isLow?'style="background:#fdf3e3"':''}>
+        return `<tr ${isLow?'style="background:#fdf3e3"':(e.state?'style="background:#FFF8E8"':'')}>
         <td class="num">${shortDate(e.date)}</td>
         <td>${esc(e.name)} ${e.note?`<span class="small muted">· ${esc(e.note)}</span>`:""}</td>
         <td class="num ${e.amount>=0?'pos':'neg'}">${fmt(e.amount)}</td>
@@ -1442,7 +1522,7 @@ function budgetDrillRow(p, cat) {
       <div style="background:#fff;border-radius:10px;padding:11px 13px;margin-top:10px;font-size:13.5px;line-height:1.6">${tip}</div>
       ${cp ? `<div style="background:#EAF2FF;border-radius:10px;padding:11px 13px;margin-top:8px;font-size:13.5px">💳 <b>${cp.count} תשלומים פעילים</b> בתחום — ${fmt(cp.monthly)}/חודש (${pct(cat.budget > 0 ? cp.monthly / cat.budget : 0)} מהתקציב כאן), מסתיימים ב-<b>${hebMonth(cp.lastEnd)}</b>.</div>` : ""}
       <div style="background:#FFF8E8;border:1px solid #F0D98A;border-radius:10px;padding:11px 13px;margin-top:8px;font-size:13.5px;color:#7a5c12">
-        🤔 <b>לפני שמגדילים תקציב — בדקי:</b> האם כל זה באמת "${esc(cat.name)}"? חלק אולי שייך לתחום אחר (למשל בילויים) — העבירי אותו בעמודת "תחום". אם אחרי הבדיקה זו באמת הרמה הנכונה לך, אפשר <button class="small" style="margin-inline-start:2px" onclick="updCat('${cat.id}','budget',${d.suggested})">לעדכן תקציב ל-${fmt(d.suggested)}</button>. אם לא — עכשׁו את יודעת בדיוק מה לצמצם.
+        🤔 <b>לפני שמגדילים תקציב — בדקי:</b> האם כל זה באמת "${esc(cat.name)}"? חלק אולי שייך לתחום אחר (למשל בילויים) — העבירי אותו בעמודת "תחום". אם אחרי הבדיקה זו באמת הרמה הנכונה לך, אפשר <button class="small" style="margin-inline-start:2px" onclick="updCat('${cat.id}','budget',${d.suggested})">לעדכן תקציב ל-${fmt(d.suggested)}</button>. אם לא — עכשיו ${G("את יודעת","אתה יודע")} בדיוק מה לצמצם.
       </div>
     </div></td></tr>`;
 }
@@ -1578,14 +1658,33 @@ function addCatQuick(name, budget) {
 }
 
 /* ========== דוח הוצאות לרו"ח ========== */
+let accBi = false;   // דוח לתקופת מע"מ דו-חודשית (זוגות קבועים: ינו-פבר, מרץ-אפר, מאי-יוני...) — vatPeriodOf עבר ל-calc.js
+function mergeAccReports(a, b) {
+  const byName = {};
+  [...a.rows, ...b.rows].forEach(r => {
+    if (!byName[r.name]) byName[r.name] = { ...r };
+    else { byName[r.name].count += r.count; byName[r.name].sum += r.sum; }
+  });
+  return {
+    total: a.total + b.total, deductibleTotal: a.deductibleTotal + b.deductibleTotal,
+    unclassified: a.unclassified + b.unclassified, unclassifiedSum: (a.unclassifiedSum||0) + (b.unclassifiedSum||0),
+    txCount: a.txCount + b.txCount, rows: Object.values(byName).sort((x, y) => y.sum - x.sum),
+    deductibleList: [...a.deductibleList, ...b.deductibleList].sort((x, y) => (x.date||"").localeCompare(y.date||""))
+  };
+}
 function renderAccountant() {
   const p = P();
-  const r = accountantReport(p, viewMonth);
+  const period = vatPeriodOf(viewMonth);
+  const r = accBi ? mergeAccReports(accountantReport(p, period[0]), accountantReport(p, period[1]))
+                  : accountantReport(p, viewMonth);
+  const periodLabel = accBi ? `${hebMonth(period[0])}–${hebMonth(period[1])} (תקופת מע"מ)` : hebMonth(viewMonth);
   $("tab-accountant").innerHTML = `
   <div class="panel" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-    <div><h2 style="margin:0">🧾 דוח הוצאות לרו"ח — ${hebMonth(viewMonth)}</h2>
-      <div class="small muted">כל ההוצאות של החודש, מוכן לשליחה לרואה החשבון. מה שמסומן "מוכר במס" — זה מה שהכי חשוב לה.</div></div>
-    <div>${monthPicker()}</div>
+    <div><h2 style="margin:0">🧾 דוח הוצאות לרו"ח — ${periodLabel}</h2>
+      <div class="small muted">כל ההוצאות, מוכן לשליחה לרואה החשבון. מה שמסומן "מוכר במס" — זה מה שהכי חשוב לה.</div></div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <button class="small ${accBi ? "" : "ghost"}" onclick="accBi=!accBi;render()">${accBi ? "✓ " : ""}תקופת מע"מ — חודשיים</button>
+      ${monthPicker()}</div>
   </div>
   <div class="cards">
     <div class="kpi"><div class="lbl">סך הוצאות החודש</div><div class="val">${fmt(r.total)}</div><div class="hint">${r.txCount} תנועות</div></div>
@@ -1625,8 +1724,9 @@ function renderAccountant() {
 function exportAccountantCSV() {
   const p = P();
   const catById = id => p.categories.find(c => c.id === id);
+  const months = accBi ? vatPeriodOf(viewMonth) : [viewMonth];
   const lines = [["תאריך", "תיאור", "קטגוריה", "מוכר במס", "סכום"]];
-  p.transactions.filter(t => t.date && t.date.slice(0, 7) === viewMonth && t.amount < 0)
+  p.transactions.filter(t => t.date && months.includes(t.date.slice(0, 7)) && t.amount < 0)
     .sort((a, b) => a.date.localeCompare(b.date))
     .forEach(t => { const c = t.categoryId ? catById(t.categoryId) : null;
       lines.push([t.date, (t.desc || ""), c ? c.name : "לא מסווג", c && c.deductible ? "כן" : "לא", Math.abs(t.amount)]); });
@@ -1639,6 +1739,68 @@ function exportAccountantCSV() {
 }
 
 /* ========== תכנון מס ========== */
+/* יועץ המקדמות — נוסח מוכן לשיחה עם הרו"ח (נפתח בכפתור 📞, עם העתקה בלחיצה) */
+let mkShowCall = false;
+function mkToggleCall() { mkShowCall = !mkShowCall; render(); }
+function mkCopyCall() {
+  const el = $("mkCallText");
+  if (!el) return;
+  el.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) {}
+  try { if (navigator.clipboard) { navigator.clipboard.writeText(el.value); ok = true; } } catch (e) {}
+  alert(ok ? "הנוסח הועתק 📋 — אפשר להדביק בוואטסאפ או במייל לרו\"ח" : "לא הצלחתי להעתיק — אפשר לסמן את הטקסט ולהעתיק ידנית");
+}
+function mikdamotPanel(p) {
+  const mk = mikdamotAdvisor(p);
+  if (!mk) return "";
+  if (mk.patur) return `<div class="panel" style="border-right:4px solid var(--green)">
+    <h2>🏛️ יועץ המקדמות</h2>
+    <div style="background:#E7F6EC;border-radius:12px;padding:13px 15px;font-size:14.5px;color:#2e5d3a">
+      💚 ${G("את עוסקת פטורה","אתה עוסק פטור")} — <b>אין מע"מ ואין מקדמות מס הכנסה</b>. מה שכן נשאר: ביטוח לאומי (לפי הקביעה שלו) ודוח שנתי אחד בסוף השנה. פשוט ונעים 🙂
+    </div></div>`;
+  const perLabel = mk.months.length > 1 ? `${monthHeb(mk.months[0])}–${monthHeb(mk.months[mk.months.length - 1])}` : monthHeb(mk.months[0]);
+  if (!mk.hasData) return `<div class="panel" style="border-right:4px solid var(--accent)">
+    <h2>🏛️ יועץ המקדמות — ${perLabel}</h2>
+    <p class="desc">עוד אין הכנסות בבנק לתקופה הזאת — ברגע שייכנסו תנועות, נשווה בשבילך בין המקדמות ששולמו לבין המס שבאמת נצבר.</p></div>`;
+  const R = x => fmt(Math.round(x));
+  let verdict, tone;
+  if (mk.level === "missing") {
+    tone = { bg: "#FFF8E8", br: "#F0D98A", fg: "#7a5c12", ic: "🧡" };
+    verdict = `המקדמות מכסות <b>${R(mk.paid)}</b> מתוך <b>${R(mk.accrued)}</b> שנצבר — ההפרש <b>~${R(Math.abs(mk.gapMonthly))} לחודש</b> מצטבר לשומה.
+      שתי אפשרויות: לבקש מהרו"ח עדכון מקדמות, או להמשיך לשים את ההפרש בצד (אנחנו כבר סופרים אותו).`;
+  } else if (mk.level === "over") {
+    tone = { bg: "#EAF2FF", br: "#c9daf5", fg: "#2c4a7c", ic: "💙" };
+    verdict = `שילמת מראש <b>~${R(Math.abs(mk.gap))}</b> יותר מהמס שנצבר — אפשר לבקש הקטנת מקדמות ולהחזיר את הכסף לתזרים.`;
+  } else {
+    tone = { bg: "#E7F6EC", br: "#c4e6d3", fg: "#2e5d3a", ic: "💚" };
+    verdict = `המקדמות ששולמו (${R(mk.paid)}) קרובות למס שנצבר באמת (${R(mk.accrued)}) — הכל מיושר, אין מה לשנות כרגע. 👌`;
+  }
+  // נוסח מוכן לרו"ח — לפי הכיוון של הפער
+  const callText = mk.level === "over"
+    ? `היי, לפי המעקב שלי לתקופת ${perLabel}: המחזור נטו ממע"מ היה בערך ${R(mk.netIncome)}, ההוצאות המוכרות בערך ${R(mk.netDed)}, כלומר רווח של בערך ${R(mk.profit)}. המס שנצבר לפי המדרגות הוא בערך ${R(mk.accrued)} (מס הכנסה + ביטוח לאומי), ובפועל שילמתי ${R(mk.paid)} — כלומר שילמתי מראש בערך ${R(Math.abs(mk.gap))} יותר. האם אפשר להגיש בקשה להקטנת המקדמות? תודה!`
+    : `היי, לפי המעקב שלי לתקופת ${perLabel}: המחזור נטו ממע"מ היה בערך ${R(mk.netIncome)}, ההוצאות המוכרות בערך ${R(mk.netDed)}, כלומר רווח של בערך ${R(mk.profit)}. המס שנצבר לפי המדרגות הוא בערך ${R(mk.accrued)} (מס הכנסה + ביטוח לאומי), ובפועל שילמתי מקדמות של ${R(mk.paid)}${mk.rate > 0 ? ` (הקביעה הנוכחית: ${(mk.rate * 100).toLocaleString("he-IL", { maximumFractionDigits: 1 })}% מהמחזור)` : ""}. האם כדאי לעדכן את המקדמות כדי שלא יצטבר לי חוב בשומה השנתית? ואם לא — כמה כדאי לי לשים בצד כל חודש? תודה!`;
+  return `<div class="panel" style="border-right:4px solid var(--accent)">
+    <h2>🏛️ יועץ המקדמות — ${perLabel}</h2>
+    <p class="desc">מקדמות המס הן "תשלום על החשבון" — בסוף השנה משלמים את האמת. כאן רואים אם מה ששולם מתאים למה שבאמת נצבר, לפני שזה מפתיע.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px">
+      <div class="kpi"><div class="lbl">שולם בפועל (מהבנק)</div><div class="val" style="font-size:20px">${R(mk.paid)}</div>
+        <div class="hint">מקדמות מס הכנסה ${R(mk.paidIt)} · ביטוח לאומי ${R(mk.paidBl)}${mk.blSrc === "settings" ? " (לפי הקביעה — עוד לא זוהה בבנק)" : ""}</div></div>
+      <div class="kpi"><div class="lbl">נצבר באמת (לפי המדרגות)</div><div class="val" style="font-size:20px">${R(mk.accrued)}</div>
+        <div class="hint">מס הכנסה ${R(mk.accruedIt)} · ביטוח לאומי ${R(mk.accruedBl)}</div></div>
+    </div>
+    <div style="background:${tone.bg};border:1px solid ${tone.br};border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.7;color:${tone.fg}">${tone.ic} ${verdict}</div>
+    ${mk.rate > 0 ? `<div class="small muted" style="margin-top:7px">לפי הקביעה שלך (${(mk.rate * 100).toLocaleString("he-IL", { maximumFractionDigits: 1 })}% מהמחזור${mk.freq === "m" ? ", חודשי" : ", דו-חודשי"}) — המקדמה לתקופה הזאת ≈ <b>${R(mk.expectedMikdama)}</b>.</div>` : ""}
+    <div style="margin-top:9px">
+      <button class="small" onclick="mkToggleCall()">📞 מה לשאול את הרו"ח</button>
+      ${mkShowCall ? `<div style="margin-top:8px">
+        <textarea id="mkCallText" readonly style="width:100%;min-height:110px;font-family:inherit;font-size:13px;line-height:1.6;border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:#fff">${esc(callText)}</textarea>
+        <button class="small ghost" style="margin-top:5px" onclick="mkCopyCall()">📋 העתקה</button>
+      </div>` : ""}
+    </div>
+    <div class="small muted" style="margin-top:8px">🔍 שקיפות מלאה: מחזור נטו ממע"מ ${R(mk.netIncome)} − הוצאות מוכרות ${R(mk.netDed)} = רווח ${R(mk.profit)} → מס לפי מדרגות ${p.settings.taxParams.year} = ${R(mk.accruedIt)} מס הכנסה + ${R(mk.accruedBl)} ביטוח לאומי. הכל מהבנק — מתעדכן עם כל תנועה וסיווג. הערכה, לא תחליף לרו"ח.</div>
+  </div>`;
+}
 function renderTaxPlan() {
   const p = P();
   const r = taxPlanning(p);
@@ -1663,7 +1825,7 @@ function renderTaxPlan() {
       <b>4. מה צריך?</b> תעודת זהות + פרטי חשבון בנק. ההצטרפות אונליין, רבע שעה.<br>
       <b>5. כמה מפקידים? שתי "מדרגות קסם":</b> עד <b>${fmt(r.khLimit)}</b> — מקבלים הנחה במס עכשיו (המינימום החכם). ועד <b>20,566 ₪</b> — כל הרווחים שהכסף יעשה פטורים ממס. אפשר בהעברה אחת לפני 31.12.<br>
       <b>6. מה זה "האישור לרו"ח"?</b> בסוף השנה הקרן שולחת לך מסמך שנקרא <b>"אישור הפקדות שנתי"</b> (מגיע במייל או באזור האישי). מעבירים אותו לרואה החשבון — הוא מזין אותו בדוח השנתי, <b>וזה מה שמוריד לך את המס בפועל</b>. בלי האישור אצל הרו"ח — אין הטבה.<br>
-      <b>🏆 ומי הכי משתלמת?</b> לפי ההשוואה שלנו (יולי 2026, מסלול כללי, נתוני גמל-נט): <b>אנליסט</b> מובילה בתשואות (54.7% ב-5 שנים, דמי ניהול 0.62%) · <b>מור</b> ו<b>כלל</b> קרובות אחריה. <span class="muted">מידע כללי — לא ייעוץ השקעות; תשואות עבר לא מבטיחות עתיד.</span>
+      <b>🏆 ואיך בוחרים קרן?</b> משווים <b>תשואות ודמי ניהול</b> באתר הרשמי <b>גמל-נט</b> של רשות שוק ההון (מסלול כללי, 5 שנים אחורה) — ההשוואה לוקחת 5 דקות והנתונים שם תמיד מעודכנים. <span class="muted">מידע כללי — לא ייעוץ השקעות; תשואות עבר לא מבטיחות עתיד.</span>
     </div></details>`;
   if (r.khRoom > 0) tips.push({ ic:"💰", t:`<b>קרן השתלמות — החיסכון הכי משתלם לעצמאי:</b> ${r.khThisYear>0?`הפקדת השנה ${fmt(r.khThisYear)}.`:"עוד לא הפקדת השנה."} הפקדה של ~${fmt(r.khRoom)} עד סוף השנה = <b>בערך ${fmt(r.khSaving)} פחות מס</b>. והכסף לא הולך לאף אחד — הוא שלך, גדל, ואחרי 6 שנים נזיל ופטור ממס רווחים.${khGuide}`, cta:"activeTab='invest';render()", ctaTxt:"למעקב הקרן ←" });
   else if (!r.kh) tips.push({ ic:"💰", t:`<b>אין לך עדיין קרן השתלמות?</b> זה החיסכון הכי משתלם לעצמאי: מפקידים עד ~${fmt(r.khLimit)} בשנה, משלמים פחות מס — והכסף נשאר שלך וגדל.${khGuide}` });
@@ -1674,27 +1836,72 @@ function renderTaxPlan() {
     <div style="font-size:12.5px;color:#FFD600;margin-bottom:3px">💡 תכנון מס</div>
     <div style="font-size:16px;line-height:1.5;font-weight:500">השנה המס שלך צפוי להיות בערך <b>${fmt(r.annualTax)}</b> — בערך <b>${fmt(Math.round(r.annualTax/12))}</b> לחודש לשים בצד. רוב בעלי העסקים משלמים יותר מדי כי אף אחד לא עוצר לתכנן. הנה איפה אפשר לשלם פחות.</div>
   </div>
+
+  ${(function(){
+    // 🎯 שתי השורות הגדולות: כמה הולך לרדת · כמה חסכת (בקשת מלי 16.7)
+    const M0 = activeMonth(p);
+    const period = vatPeriodOf(M0);
+    let vatOut = 0, vatIn = 0;
+    period.forEach(m => {
+      const spm = bizHomeSplit(p, m);
+      vatOut += incomeAside(p, spm.biz.income).vat;
+      vatIn += monthlyInputVat(p, m);
+    });
+    const vatDue = Math.max(0, vatOut - vatIn);
+    const spNow = bizHomeSplit(p, M0);
+    const iaNow = incomeAside(p, spNow.biz.income);
+    const svNow = monthlySavings(p, M0);
+    let svPeriod = 0; period.forEach(m => { svPeriod += monthlySavings(p, m).total; });
+    return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div class="panel" style="margin:0;border-right:5px solid var(--accent)">
+        <div style="font-size:13px;color:var(--muted)">🏛️ כמה מס הולך לרדת</div>
+        <div style="font-size:30px;font-weight:800;margin:3px 0">${fmt(Math.round(vatDue))}</div>
+        <div class="small">מע"מ לתקופת ${hebMonth(period[0])}–${hebMonth(period[1])} (אחרי קיזוז ${fmt(Math.round(vatIn))} תשומות)</div>
+        <div class="small muted" style="margin-top:3px">+ מס הכנסה וביטוח לאומי: ~${fmt(Math.round(iaNow.taxNi))} לחודש בצד</div>
+      </div>
+      <div class="panel" style="margin:0;border-right:5px solid var(--green);background:#F3FBF5">
+        <div style="font-size:13px;color:#2e5d3a">💚 כמה חסכת</div>
+        <div style="font-size:30px;font-weight:800;margin:3px 0;color:#2e7d43">${fmt(Math.round(svPeriod))}</div>
+        <div class="small" style="color:#2e5d3a">בתקופה הזאת, בזכות ההוצאות המוכרות (${fmt(Math.round(svNow.total))} החודש)</div>
+        <div class="small muted" style="margin-top:3px">ככל שמסווגים יותר — חוסכים יותר 😉</div>
+      </div>
+    </div>`; })()}
   <div class="cards">
     <div class="kpi"><div class="lbl">כמה מס תשלמי השנה (הערכה)</div><div class="val">${fmt(r.annualTax)}</div><div class="hint">בערך ${fmt(Math.round(r.annualTax/12))} בחודש</div></div>
     <div class="kpi"><div class="lbl">מכל 100 ₪ נוספים שתרוויחי</div><div class="val">₪${Math.round(r.marginalRate*100)}</div><div class="hint">ילכו למס — לכן כל הוצאה מוכרת שווה כסף</div></div>
     <div class="kpi good"><div class="lbl">דרכים לשלם פחות שמצאנו לך</div><div class="val">${tips.length}</div><div class="hint">מפורטות למטה 👇</div></div>
   </div>
 
-  <div class="panel" style="border-right:4px solid var(--accent)">
-    <h2>💸 כמה צפוי ללכת למדינה השנה — לפי ההכנסות שלך</h2>
+  ${(function(){
+    // 💸 מקור אחד לכל המספרים: הכסף שנכנס בפועל מהבנק (לא תחזית הלקוחות)
+    const M0 = activeMonth(p);
+    const sp0 = bizHomeSplit(p, M0);
+    const ia0 = incomeAside(p, sp0.biz.income);
+    const inV0 = monthlyInputVat(p, M0);
+    const vatNetM = Math.max(0, ia0.vat - inV0);
+    const eff = selfTaxEffectiveRate(p);
+    // פיצול מס/ב"ל לפי המדרגות האמיתיות (ואם אין היסטוריה — לפי היחס הקבוע)
+    let itShare = 0.63;
+    if (eff.breakdown && (eff.breakdown.incomeTax + eff.breakdown.bituachLeumi) > 0)
+      itShare = eff.breakdown.incomeTax / (eff.breakdown.incomeTax + eff.breakdown.bituachLeumi);
+    const itM = ia0.taxNi * itShare, blM = ia0.taxNi * (1 - itShare);
+    const totM = vatNetM + ia0.taxNi;
+    return `<div class="panel" style="border-right:4px solid var(--accent)">
+    <h2>💸 כמה הולך למדינה בחודש — לפי הכסף שנכנס בפועל (${hebMonth(M0)})</h2>
     <div class="cards" style="margin:8px 0 0">
-      <div class="kpi"><div class="lbl">מס הכנסה</div><div class="val" style="font-size:18px">${fmt(fcT.tax.incomeTax)}</div><div class="hint">~${fmt(Math.round(fcT.tax.incomeTax/12))} בחודש</div></div>
-      <div class="kpi"><div class="lbl">ביטוח לאומי</div><div class="val" style="font-size:18px">${fmt(fcT.tax.bituachLeumi)}</div><div class="hint">~${fmt(Math.round(fcT.tax.bituachLeumi/12))} בחודש</div></div>
-      <div class="kpi"><div class="lbl">מע"מ (מה שגבית עבור המדינה)</div><div class="val" style="font-size:18px">${fmt(vatY)}</div><div class="hint">~${fmt(Math.round(vatY/12))} בחודש</div></div>
-      <div class="kpi" style="border:2px solid var(--accent)"><div class="lbl">סה"כ למדינה</div><div class="val" style="font-size:18px">${fmt(totalState)}</div><div class="hint">~${fmt(Math.round(totalState/12))} בחודש — את זה שמים בצד</div></div>
+      <div class="kpi"><div class="lbl">מס הכנסה</div><div class="val" style="font-size:18px">${fmt(Math.round(itM))}</div><div class="hint">לחודש · לפי מדרגות 2026</div></div>
+      <div class="kpi"><div class="lbl">ביטוח לאומי</div><div class="val" style="font-size:18px">${fmt(Math.round(blM))}</div><div class="hint">לחודש</div></div>
+      <div class="kpi"><div class="lbl">מע"מ לתשלום</div><div class="val" style="font-size:18px">${fmt(Math.round(vatNetM))}</div><div class="hint">${inV0>0?`אחרי קיזוז ${fmt(Math.round(inV0))} תשומות ✨`:"לחודש"}</div></div>
+      <div class="kpi" style="border:2px solid var(--accent)"><div class="lbl">סה"כ לשים בצד</div><div class="val" style="font-size:18px">${fmt(Math.round(totM))}</div><div class="hint">בחודש — מתעדכן עם כל סיווג</div></div>
     </div>
-    <div class="small muted" style="margin-top:8px">מחושב מהתחזית של ההכנסות וההוצאות שלך. הערכה — לא תחליף לרו"ח.</div>
-  </div>
+    <div class="small muted" style="margin-top:8px">מחושב מההכנסות האמיתיות שנכנסו לבנק ${hebMonth(M0)} ומההוצאות המוכרות שסווגו. הערכה — לא תחליף לרו"ח.</div>
+  </div>`; })()}
+  ${mikdamotPanel(p)}
   ${dti ? `<div class="panel" style="border-right:4px solid var(--green)">
     <h2>💚 הוצאות מוכרות = כסף שחוזר אליך</h2>
     <div style="background:var(--brand-soft);border-radius:12px;padding:13px 15px;margin-bottom:10px">
       <div style="font-size:15px;color:#47541F">דוגמה פשוטה: קנית משהו לעסק ב-<b>100 ₪</b>? בערך <span style="font-size:24px;font-weight:800">₪${dti.per100}</span> מזה יחזרו אליך.</div>
-      <div class="small" style="color:#47541F;margin-top:4px">איך? תשלמי פחות מס הכנסה, פחות ביטוח לאומי — ותקבלי בחזרה את המע"מ. בתנאי שההוצאה מסומנת "מוכרת".</div>
+      <div class="small" style="color:#47541F;margin-top:4px">איך? ${G("תשלמי","תשלם")} פחות מס הכנסה ופחות ביטוח לאומי${dti.isMorasheh ? ` — ${G("ותקבלי","ותקבל")} בחזרה גם את המע"מ` : ` (מע"מ לא רלוונטי — ${G("עוסקת פטורה","עוסק פטור")} לא ${G("גובה","גובה")} ולא ${G("מקזזת","מקזז")} מע"מ)`}. בתנאי שההוצאה מסומנת "מוכרת".</div>
     </div>
     <p class="desc" style="margin:0 0 8px">על כל ההוצאות המוכרות שכבר הגדרת — ככה זה נראה <b>בחודש</b>:</p>
     <div class="cards" style="margin:0">
@@ -1707,6 +1914,7 @@ function renderTaxPlan() {
       // בדיוק-בדיוק לכל קטגוריה: כמה מס יורד בזכותה (לפי ההוצאה בפועל בחודש הפעיל, ואם אין — לפי התקציב)
       const M2 = activeMonth(p), act2 = actualsForMonth(p, M2);
       const tp2 = p.settings.taxParams, vr = tp2.vatRate || 0.18;
+      const blR = marginalBlRateOf(p);   // ב"ל לפי המדרגה האמיתית — לא 18% קבוע לכולם
       const rows = p.categories.filter(c => c.tag === "biz" && c.deductible).map(c => {
         const spent = act2.byCat[c.id] || 0;
         const base = spent > 0 ? spent : (c.budget || 0);
@@ -1714,7 +1922,7 @@ function renderTaxPlan() {
         const vatB = (dti.isMorasheh && c.vatDeductible) ? base * vr / (1 + vr) : 0;
         const net = base - vatB;
         const itB = net * dti.marginalRate;
-        const niB = net * (tp2.blFullRate || 0.18);
+        const niB = net * blR;
         return { name: c.name, base, fromBudget: spent <= 0, vatB, itB, niB, tot: vatB + itB + niB };
       }).filter(Boolean).sort((a, b) => b.tot - a.tot);
       if (!rows.length) return "";
@@ -1730,7 +1938,7 @@ function renderTaxPlan() {
             <td class="num">${fmt(r.niB)}</td>
             <td class="num pos"><b>${fmt(r.tot)}</b></td></tr>`).join("")}
         </table></div>
-        <div class="small muted" style="margin-top:4px">מס הכנסה לפי המדרגה השולית שלך (${Math.round(dti.marginalRate*100)}%) · ב"ל ${Math.round((tp2.blFullRate||0.18)*100)}% · מדרגות 2026 המעודכנות (כולל ריווח המדרגות ממרץ).</div>
+        <div class="small muted" style="margin-top:4px">מס הכנסה לפי המדרגה השולית שלך (${Math.round(dti.marginalRate*100)}%) · ב"ל לפי המדרגה שלך (${(blR*100).toLocaleString("he-IL",{maximumFractionDigits:1})}%) · מדרגות 2026 המעודכנות (כולל ריווח המדרגות ממרץ).</div>
       </div>`; })()}
     <div class="small muted" style="margin-top:8px">הערכה — האישור הסופי אצל רואה החשבון. ${dti.isMorasheh?'':'(מע"מ חוזר רק לעוסק מורשה.)'}</div>
   </div>`:""}
@@ -1789,11 +1997,13 @@ function renderIncome() {
     <h2>🎯 הדרך ליעד שלך</h2>
     ${goal > 0 ? `
       ${gapNow > 0
-        ? `<div style="font-size:15px;line-height:1.6">כדי להגיע ליעד של <b>${fmt(goal)}</b> בחודש — חסרים לך כרגע כ-<b style="color:var(--brand);font-size:22px">${neededNow ?? "—"}</b> לקוחות חדשים.</div>`
-        : `<div style="font-size:15px">🎉 את כבר ביעד החודש! (${fmt(monthlyNow)}) — יפה מאוד.</div>`}
-      ${minRow && minRow.bizIncome < monthlyNow - 1 ? `<div class="small" style="margin-top:10px;background:#fdf3e3;color:#8a5a10;border-radius:10px;padding:10px 13px;line-height:1.6">⚠️ שימי לב: במסלול הנוכחי ההכנסה יורדת ל-<b>${fmt(minRow.bizIncome)}</b> עד ${hebMonth(minRow.ym)}, כי כמה ליוויים מסתיימים. כדי לשמור על הקצב — כדאי לגייס לקוחות חדשים עוד לפני.</div>` : ""}
-      <div class="small muted" style="margin-top:10px">כל לקוח חדש שווה בערך <b>${fmt(avgFee)}</b> לחודש. הפירוט המלא (כמה שיחות ולידים צריך) בטבלה למטה.</div>
-    ` : `<div class="muted">הגדירי יעד הכנסה חודשי (בהגדרות) כדי לראות בדיוק כמה לקוחות צריך.</div>`}
+        ? (neededNow != null && avgFee > 0
+          ? `<div style="font-size:15px;line-height:1.6">כדי להגיע ליעד של <b>${fmt(goal)}</b> בחודש — חסרים לך כרגע כ-<b style="color:var(--brand);font-size:22px">${neededNow}</b> לקוחות חדשים.</div>`
+          : `<div style="font-size:15px;line-height:1.6">כדי להגיע ליעד של <b>${fmt(goal)}</b> בחודש חסרים <b>${fmt(gapNow)}</b>. ${G("הוסיפי","הוסף")} לקוחות לטבלה למטה (או ממוצע עסקה) — ואחשב לך בדיוק כמה לקוחות צריך.</div>`)
+        : `<div style="font-size:15px">🎉 ${G("את","אתה")} כבר ביעד החודש! (${fmt(monthlyNow)}) — יפה מאוד.</div>`}
+      ${minRow && minRow.bizIncome < monthlyNow - 1 ? `<div class="small" style="margin-top:10px;background:#fdf3e3;color:#8a5a10;border-radius:10px;padding:10px 13px;line-height:1.6">⚠️ ${G("שימי","שים")} לב: במסלול הנוכחי ההכנסה יורדת ל-<b>${fmt(minRow.bizIncome)}</b> עד ${hebMonth(minRow.ym)}, כי כמה ליוויים מסתיימים. כדי לשמור על הקצב — כדאי לגייס לקוחות חדשים עוד לפני.</div>` : ""}
+      ${avgFee > 0 ? `<div class="small muted" style="margin-top:10px">כל לקוח חדש שווה בערך <b>${fmt(avgFee)}</b> לחודש. הפירוט המלא (כמה שיחות ולידים צריך) בטבלה למטה.</div>` : ""}
+    ` : `<div class="muted">${G("הגדירי","הגדר")} יעד הכנסה חודשי (בהגדרות) כדי לראות בדיוק כמה לקוחות צריך.</div>`}
   </div>
 
   ${(function(){
@@ -1802,15 +2012,17 @@ function renderIncome() {
     const toGoal = avgDeal > 0 && goal > 0 ? Math.ceil(goal / avgDeal) : null;
     return `<div class="panel">
       <h2>💼 כמה עסקאות צריך החודש?</h2>
-      <p class="desc">מתאים לכל עסק, גם עם עסקאות משתנות. הזיני את ממוצע העסקה שלך — ונחשב כמה עסקאות בחודש כדי לכסות הוצאות ולהגיע ליעד.</p>
+      <p class="desc">מתאים לכל עסק, גם עם עסקאות משתנות. ${G("הזיני","הזן")} את ממוצע העסקה שלך — ונחשב כמה עסקאות בחודש כדי לכסות הוצאות ולהגיע ליעד.</p>
       <div class="addLine" style="margin:0 0 12px;border:none;padding:0">
         <div><label>ממוצע עסקה (₪)</label><input type="number" value="${p.settings.avgDealSize || ""}" placeholder="${Math.round(avgFee) || "סכום"}" onchange="updAvgDeal(this.value)"></div>
       </div>
-      ${avgDeal > 0 ? `<div class="cards" style="margin:0">
+      ${avgDeal > 0 ? (be.hasData ? `<div class="cards" style="margin:0">
         <div class="kpi warn"><div class="lbl">לכיסוי ההוצאות (איזון)</div><div class="val">${toBE}</div><div class="hint">עסקאות בחודש · = ${fmt(be.neededIncomeMonthly)}</div></div>
-        <div class="kpi good"><div class="lbl">להגעה ליעד</div><div class="val">${toGoal ?? "—"}</div><div class="hint">עסקאות בחודש · = ${fmt(goal)}</div></div>
+        ${toGoal ? `<div class="kpi good"><div class="lbl">להגעה ליעד</div><div class="val">${toGoal}</div><div class="hint">עסקאות בחודש · = ${fmt(goal)}</div></div>` : ""}
       </div>
-      <div class="small muted" style="margin-top:8px">מתחת ל"איזון" — העסק בהפסד. זה בדיוק מה שרוב בעלי העסקים לא יודעים.</div>` : `<div class="muted small">הזיני ממוצע עסקה כדי לראות את החישוב.</div>`}
+      <div class="small muted" style="margin-top:8px">מתחת ל"איזון" — העסק בהפסד. זה בדיוק מה שרוב בעלי העסקים לא יודעים.${be.empCost>0?` (כולל עלות העובדים: ${fmt(be.empCost)}/חודש)`:""}</div>`
+      : `<div style="background:#FFF6D9;border-radius:11px;padding:11px 13px;font-size:13.5px;color:#6d5c12">🤝 כדי לחשב נקודת איזון אמיתית — נגדיר יחד את ההוצאות שלך. ${G("קבעי","קבע")} תקציבים לקטגוריות (אפילו בערך), ואחשב כמה עסקאות צריך כדי לכסות הכל. <button class="small ghost" onclick="activeTab='budgets';render()">לתקציבים ←</button></div>`)
+      : `<div class="muted small">${G("הזיני","הזן")} ממוצע עסקה כדי לראות את החישוב.</div>`}
     </div>`;
   })()}
 
@@ -1854,7 +2066,7 @@ function renderIncome() {
     if (!emps.length && !(p.settings.bizType === "baam")) {
       // אין עובדים — שורה קטנה להוספה, לא פאנל שלם
       return `<div class="panel" style="padding:12px 16px"><details>
-        <summary style="cursor:pointer;font-weight:700;font-size:14px">👥 יש לך עובדים? הוסיפי אותם — ונראה לך כמה הם באמת עולים</summary>
+        <summary style="cursor:pointer;font-weight:700;font-size:14px">👥 יש לך עובדים? ${G("הוסיפי","הוסף")} אותם — ונראה לך כמה הם באמת עולים</summary>
         <div class="addLine" style="margin-top:10px">
           <div><label>שם</label><input type="text" id="empName" placeholder="עובד/ת"></div>
           <div><label>שכר ברוטו לחודש (₪)</label><input type="number" id="empSalary" placeholder="8000"></div>
@@ -1879,7 +2091,7 @@ function renderIncome() {
         <div><label>שכר ברוטו לחודש (₪)</label><input type="number" id="empSalary" placeholder="8000"></div>
         <button onclick="addEmployee()">+ הוספה</button>
       </div>
-      <div class="small muted" style="margin-top:6px">💡 התשלומים בפועל נמשכים מהבנק אוטומטית — הטבלה הזאת היא לתכנון: לדעת מראש מה כל עובד עולה באמת, לפני שמגייסים.</div>
+      <div class="small muted" style="margin-top:6px">💡 עלות העובדים נכנסת אוטומטית לנקודת האיזון ולתחזית — ככה הרווח שרואים הוא הרווח האמיתי.</div>
     </div>`; })()}
 
   <div class="panel">
@@ -2013,18 +2225,19 @@ function renderForecast() {
       <p class="small muted">נשארו ${fmt(st.remaining)} עד התקרה. מעל התקרה — חובה לעבור לעוסק מורשה.</p></div>`;
   }
 
-  const switchPanel = p.settings.bizType !== "baam" ? `
+  // השוואת בע"מ — רק כשיש רווח חיובי (רווח שלילי מייצר "מס שלילי" חסר משמעות), ובניסוח לפי סוג העוסק
+  const switchPanel = p.settings.bizType !== "baam" && fc.annual.profit > 0 ? `
   <div class="panel">
     <h2>מתי לעבור לבע"מ?</h2>
-    <p class="desc">ההשוואה לוקחת בחשבון שאת מושכת מהחברה שכר שמכסה את ההוצאות האישיות שלך (${fmt(fc.annual.personalExpense / 12)} לחודש), והשאר נשאר בחברה במס של ${pct(tp.corpTaxRate)}.</p>
+    <p class="desc">ההשוואה לוקחת בחשבון ${G("שאת מושכת","שאתה מושך")} מהחברה שכר שמכסה את ההוצאות האישיות שלך (${fmt(fc.annual.personalExpense / 12)} לחודש), והשאר נשאר בחברה במס של ${pct(tp.corpTaxRate)}.</p>
     ${cmp.switchPoint ? `
     <div class="verdict ${fc.annual.profit >= cmp.switchPoint ? "go" : "stay"}">
       ${fc.annual.profit >= cmp.switchPoint
         ? `📈 ברמת הרווח הצפויה שלך (${fmt(fc.annual.profit)} בשנה) מעבר לבע"מ כבר חוסך בערך ${fmt(cmp.savingRetained)} בשנה — שווה לקבוע שיחה עם רו"ח.`
-        : `✋ כרגע משתלם להישאר עוסקת מורשה. נקודת המעבר המשוערת: רווח שנתי של בערך ${fmt(cmp.switchPoint)} (את צפויה ל-${fmt(fc.annual.profit)}).`}
+        : `✋ כרגע משתלם להישאר ${bizTypeName(p.settings.bizType)}. נקודת המעבר המשוערת: רווח שנתי של בערך ${fmt(cmp.switchPoint)} (${G("את צפויה","אתה צפוי")} ל-${fmt(fc.annual.profit)}).`}
     </div>` : ""}
     <div class="scrollX" style="margin-top:12px"><table>
-      <tr><th></th><th>עוסקת מורשה</th><th>בע"מ (רווח נשאר בחברה)</th><th>בע"מ (הכל נמשך)</th></tr>
+      <tr><th></th><th>${bizTypeName(p.settings.bizType)}</th><th>בע"מ (רווח נשאר בחברה)</th><th>בע"מ (הכל נמשך)</th></tr>
       <tr><td>סך מס שנתי</td><td class="num">${fmt(cmp.self.totalTax)}</td>
         <td class="num">${fmt(cmp.comp.retained.totalTax)}</td><td class="num">${fmt(cmp.comp.distributed.totalTax)}</td></tr>
       <tr><td>אחוז מס אפקטיבי</td><td class="num">${pct(cmp.self.effectiveRate, 1)}</td>
@@ -2038,6 +2251,11 @@ function renderForecast() {
   </div>` : "";
 
   $("tab-forecast").innerHTML = `
+  <div class="panel" style="background:var(--brand-soft);border:none;padding:10px 15px">
+    <div class="small" style="color:#47541F">📈 <b>תחזית</b> — ${fc.usesBaseline
+      ? `לפי ההכנסה החודשית שהצהרת (${fmt(Math.round(fc.baselineMonthly))}${p.settings.bizType==="patur"?"":" לפני מע\"מ"}). ככל ${G("שתוסיפי","שתוסיף")} לקוחות לטבלה — התחזית תתחדד.`
+      : `לפי טבלת הלקוחות שלך. זה תכנון קדימה — המספרים "בפועל" נמצאים בבית ובתזרים.`}</div>
+  </div>
   <div class="cards">
     <div class="kpi"><div class="lbl">הכנסה עסקית שנתית צפויה</div><div class="val">${fmt(fc.annual.bizIncome)}</div></div>
     <div class="kpi"><div class="lbl">רווח עסקי לפני מס</div><div class="val">${fmt(fc.annual.profit)}</div></div>
@@ -2077,14 +2295,19 @@ function renderForecast() {
   <div class="row">
     <div class="panel">
       <h2>נקודת איזון — ולמה דווקא המספר הזה</h2>
-      <div style="background:var(--brand-soft);border-radius:12px;padding:12px 14px;margin:8px 0;font-size:14px;line-height:2">
-        🏠 החיים האישיים שלך: <b>${fmt(be.personalMonthly)}</b><br>
-        💰 יעד החיסכון החודשי: <b>${fmt(be.savings)}</b><br>
-        🏢 הוצאות העסק: <b>${fmt(be.bizMonthly)}</b><br>
+      ${be.hasData ? `<div style="background:var(--brand-soft);border-radius:12px;padding:12px 14px;margin:8px 0;font-size:14px;line-height:2">
+        🏠 החיים האישיים שלך (לפי התקציבים שהגדרת): <b>${fmt(be.personalMonthly)}</b><br>
+        ${be.savings > 0 ? `💰 יעד החיסכון החודשי: <b>${fmt(be.savings)}</b><br>` : ""}
+        🏢 הוצאות העסק: <b>${fmt(be.bizMonthly)}</b>${be.empCost > 0 ? ` <span class="small muted">(כולל עובדים ${fmt(be.empCost)})</span>` : ""}<br>
         🧾 המס שמתלווה להכנסה כזאת: <b>${fmt(Math.max(0, Math.round(be.neededIncomeMonthly - be.personalMonthly - be.savings - be.bizMonthly)))}</b><br>
         <span style="border-top:1px dashed #b6c09a;display:block;margin-top:4px;padding-top:6px">= צריך שייכנס לפחות <b style="font-size:18px">${fmt(be.neededIncomeMonthly)}</b> בחודש</span>
       </div>
-      ${be.neededClients ? `<p>במחיר ממוצע של ${fmt(be.avgFee)} ללקוח — זה <b>${be.neededClients} לקוחות ליווי</b> במקביל.</p>` : '<p class="muted">הוסיפי לקוחות כדי לחשב כמה לקוחות צריך.</p>'}
+      ${be.neededClients ? `<p>במחיר ממוצע של ${fmt(be.avgFee)} ללקוח — זה <b>${be.neededClients} לקוחות ליווי</b> במקביל.</p>` : `<p class="muted">${G("הוסיפי","הוסף")} לקוחות כדי לחשב כמה לקוחות צריך.</p>`}`
+      : `<div style="background:#FFF6D9;border-radius:12px;padding:12px 14px;margin:8px 0;font-size:13.5px;line-height:1.8;color:#6d5c12">
+        🤝 נקודת האיזון אומרת כמה צריך להיכנס כדי לכסות את החיים שלך — אבל עוד לא סיפרת לי כמה הם עולים.
+        נגדיר יחד את ההוצאות שלך (אפילו בערך), ואז המספר כאן יהיה אמיתי — שלך, לא של אף אחד אחר.
+        <div style="margin-top:6px"><button class="small ghost" onclick="activeTab='budgets';render()">להגדיר תקציבים ←</button></div>
+      </div>`}
     </div>
     <div class="panel">
       <div style="display:flex;align-items:center;gap:10px">
@@ -2110,6 +2333,9 @@ function renderPlan() {
   const monthlyNow = (p.commitments || []).reduce((s, c) => s + commitmentInMonth(c, base, base), 0);
 
   $("tab-plan").innerHTML = `
+  <div class="panel" style="background:var(--brand-soft);border:none;padding:10px 15px">
+    <div class="small" style="color:#47541F">🔮 <b>תכנון קדימה — תחזית</b> לפי טבלת הלקוחות, ההתחייבויות והתקציבים שהגדרת (לא כסף שנכנס בפועל).</div>
+  </div>
   <div class="cards">
     <div class="kpi"><div class="lbl">התחייבויות החודש</div><div class="val">${fmt(monthlyNow)}</div></div>
     <div class="kpi"><div class="lbl">סך נותר לשלם (הכל)</div><div class="val">${fmt(totalRemaining)}</div></div>
@@ -2155,7 +2381,7 @@ function renderPlan() {
       { label: "התחייבויות", values: fp.rows.map(r=>r.bizComm+r.persComm), color: CHART_COLORS.red }
     ])}
     <div class="scrollX"><table>
-      <tr><th>חודש</th><th>הכנסה</th><th>עסקי (רדי אקשן)</th><th>הלוואות</th><th>חיים</th><th>מס משוער</th><th>נשאר ביד</th></tr>
+      <tr><th>חודש</th><th>הכנסה</th><th>התחייבויות עסקיות</th><th>הלוואות</th><th>חיים</th><th>מס משוער</th><th>נשאר ביד</th></tr>
       ${fp.rows.map(r=>`<tr>
         <td>${hebMonth(r.ym)}</td>
         <td class="num">${fmt(r.income)}</td>
@@ -2194,17 +2420,20 @@ function renderMarketing() {
     <div class="kpi"><div class="lbl">ליד ← שיחה</div><div class="val">${f.callRate !== null ? pct(f.callRate, 1) : "—"}</div></div>
     <div class="kpi"><div class="lbl">שיחה ← לקוח</div><div class="val">${f.closeRate !== null ? pct(f.closeRate, 1) : "—"}</div></div>
     <div class="kpi"><div class="lbl">עלות לרכישת לקוח (CAC)</div><div class="val">${f.cac !== null ? fmt(f.cac) : "—"}</div></div>
-    <div class="kpi good"><div class="lbl">שווי לקוח (LTV)</div><div class="val">${fmt(f.ltv)}</div>
-      <div class="hint">מחיר ממוצע × ${p.settings.avgEngagementMonths} חודשי ליווי</div></div>
+    <div class="kpi good"><div class="lbl">שווי לקוח לאורך זמן (LTV)</div><div class="val">${fmt(f.ltv)}</div>
+      <div class="hint">מחיר ממוצע × ${p.settings.avgEngagementMonths} חודשי התקשרות (אפשר לשנות בהגדרות)</div></div>
     <div class="kpi ${f.ltvCac && f.ltvCac >= 3 ? "good" : "warn"}"><div class="lbl">יחס LTV:CAC</div>
       <div class="val">${f.ltvCac ? f.ltvCac.toFixed(1) : "—"}</div><div class="hint">מעל 3 = שיווק רווחי מאוד</div></div>
   </div>
 
   <div class="panel">
     <h2>מה צריך כדי לסגור את הפער מהיעד החודש</h2>
-    ${neededNow > 0 ? `<p>חסרים <b>${fmt(gapNow)}</b> ליעד — זה <b>${neededNow} לקוחות</b> חדשים.
-      ${needs.views ? `לפי המשפך שלך: בערך <b>${needs.views.toLocaleString("he-IL")} צפיות</b> ← <b>${needs.leads} לידים</b> ← <b>${needs.calls} שיחות אבחון</b>.` : '<span class="muted">הזיני נתוני שיווק כדי לחשב לידים ושיחות.</span>'}</p>`
-      : `<p class="pos">✓ את ביעד החודשי — כל לקוח חדש מכאן הוא צמיחה.</p>`}
+    ${gapNow > 0
+      ? (neededNow > 0 ? `<p>חסרים <b>${fmt(gapNow)}</b> ליעד — זה <b>${neededNow} לקוחות</b> חדשים.
+          ${needs.views ? `לפי המשפך שלך: בערך <b>${needs.views.toLocaleString("he-IL")} צפיות</b> ← <b>${needs.leads} לידים</b> ← <b>${needs.calls} שיחות אבחון</b>.` : `<span class="muted">${G("הזיני","הזן")} נתוני שיווק כדי לחשב לידים ושיחות.</span>`}</p>`
+        : `<p>חסרים <b>${fmt(gapNow)}</b> ליעד החודשי. ${G("הוסיפי","הוסף")} לקוחות או ממוצע עסקה בטאב "לקוחות" — ואחשב כמה לקוחות חדשים צריך.</p>`)
+      : (goal > 0 ? `<p class="pos">✓ ${G("את","אתה")} ביעד החודשי — כל לקוח חדש מכאן הוא צמיחה.</p>`
+        : `<p class="muted">${G("הגדירי","הגדר")} יעד הכנסה חודשי בהגדרות — ואראה לך בדיוק מה השיווק צריך להשיג.</p>`)}
   </div>
 
   <div class="panel">
@@ -2391,7 +2620,7 @@ function renderInvest() {
   </div>
 
   <div class="panel" style="background:var(--brand-soft)">
-    <p style="margin:0;font-size:13.5px;line-height:1.6">💡 כל פעם שתעדכני את השווי הנוכחי (מאפליקציית הקרן), תראי כאן כמה הכסף שלך <b>צמח מעבר להפקדות</b> — זו הריבית-דריבית שעובדת בשבילך לעבר מספר החופש שלך.</p>
+    <p style="margin:0;font-size:13.5px;line-height:1.6">💡 כל פעם ${G("שתעדכני","שתעדכן")} את השווי הנוכחי (מאפליקציית הקרן), ${G("תראי","תראה")} כאן כמה הכסף שלך <b>צמח מעבר להפקדות</b> — זה הריבית-דריבית שעובדת בשבילך לעבר מספר החופש שלך.</p>
   </div>`;
 }
 function updInvest(id,k,v){const inv=P().investments.find(i=>i.id===id);if(inv)inv[k]=v;render();}
@@ -2437,7 +2666,7 @@ function renderFreedom() {
     <h2>🗺️ אז איך באמת מגיעים לשם? התוכנית בפשטות</h2>
     <div style="font-size:14.5px;line-height:2.1;margin-top:6px">
       <b>1.</b> כל חודש שמים בצד ומשקיעים: <b>${fmt(needM)}</b> <span class="muted small">(כדי להגיע בעוד ${fp.horizonYears} שנים)</span><br>
-      <b>2.</b> היום את שמה בערך <b>${fmt(fp.startMonthly || 0)}</b> — ${gapM > 0 ? `כלומר חסרים <b>${fmt(gapM)}</b> בחודש` : `את כבר שם! 🎉`}<br>
+      <b>2.</b> היום ${G("את שמה","אתה שם")} בערך <b>${fmt(fp.startMonthly || 0)}</b> — ${gapM > 0 ? `כלומר חסרים <b>${fmt(gapM)}</b> בחודש` : `${G("את","אתה")} כבר שם! 🎉`}<br>
       ${gapM > 0 && extraClients ? `<b>3.</b> איך סוגרים את הפער? בערך <b>${extraClients} לקוחות נוספים</b> במקביל (לפי עסקה ממוצעת של ${fmt(ad)}, אחרי מס) — או שילוב של העלאת מחיר + עוד לקוחות<br>` : ""}
       <b>${gapM > 0 && extraClients ? "4" : "3"}.</b> הכסף שמושקע צומח בערך ${pct(fp.annualReturn)} בשנה — והריבית-דריבית עושה את רוב העבודה בשנים האחרונות 🌱
     </div>
@@ -2446,7 +2675,7 @@ function renderFreedom() {
 
   <div class="cards">
     <div class="kpi"><div class="lbl">מה צברת היום</div><div class="val">${fmt(fp.currentNetWorth)}</div>
-      <div class="hint">+ הון פתיחה ${fmt(fp.seedCapital)} בשנת ${fp.seedYear}</div></div>
+      ${fp.seedCapital > 0 ? `<div class="hint">+ הון פתיחה ${fmt(fp.seedCapital)} בשנת ${fp.seedYear}</div>` : ""}</div>
     <div class="kpi"><div class="lbl">תגיעי למספר בשנת</div><div class="val">${reachYear || "מעבר ל-25 שנה"}</div>
       <div class="hint">${yearsToGoal ? `בעוד ${yearsToGoal} שנים` : "צריך לשנות את ההנחות"}</div></div>
     <div class="kpi ${endBalance >= goal ? "good" : "warn"}"><div class="lbl">צפי הון בעוד 25 שנה</div>
@@ -2467,9 +2696,9 @@ function renderFreedom() {
 
   <div class="row">
     <div class="panel">
-      <h2>ההנחות שלך — שני בהן ותראי מה קורה</h2>
+      <h2>ההנחות שלך — ${G("שני בהן ותראי","שנה בהן ותראה")} מה קורה</h2>
       <div class="formGrid">
-        <div><label>יעד הוצאות שנתי כאישה עשירה (₪)</label><input type="number" value="${fp.annualSpendTarget}" onchange="FP('annualSpendTarget',this.value)"></div>
+        <div><label>יעד הוצאות שנתי בחיים שבחלום (₪)</label><input type="number" value="${fp.annualSpendTarget}" onchange="FP('annualSpendTarget',this.value)"></div>
         <div><label>שיעור משיכה בטוח</label><input type="number" step="0.005" value="${fp.withdrawalRate}" onchange="FP('withdrawalRate',this.value)"></div>
         <div><label>מה צברת היום (₪)</label><input type="number" value="${fp.currentNetWorth}" onchange="FP('currentNetWorth',this.value)"></div>
         <div><label>הון פתיחה (₪)</label><input type="number" value="${fp.seedCapital}" onchange="FP('seedCapital',this.value)"></div>
@@ -2551,8 +2780,21 @@ function renderSettings() {
     </div>
   </div>
   <div class="panel">
+    <h2>🏛️ מקדמות ותשלומי מדינה</h2>
+    <p class="desc">מה שרואה החשבון קבע לך. לא ${G("בטוחה","בטוח")}? אפשר להשאיר 0 — אנחנו מזהים את התשלומים מהבנק.</p>
+    <div class="formGrid">
+      <div><label>מקדמת מס הכנסה (% מהמחזור)</label><input type="number" step="0.1" min="0" max="30" value="${Math.round((s.mikdamaRate || 0) * 1000) / 10}" onchange="P().settings.mikdamaRate=Math.max(0,(Number(this.value)||0)/100);render()"></div>
+      <div><label>באיזו תדירות משלמים את המקדמה</label><select onchange="P().settings.mikdamaFreq=this.value;render()">
+        <option value="2m" ${(s.mikdamaFreq || "2m") === "2m" ? "selected" : ""}>כל חודשיים (יחד עם המע"מ)</option>
+        <option value="m" ${s.mikdamaFreq === "m" ? "selected" : ""}>כל חודש</option></select></div>
+      <div><label>מקדמת ביטוח לאומי (₪ לחודש)</label><input type="number" min="0" value="${s.blMonthlyAdvance || 0}" onchange="P().settings.blMonthlyAdvance=Number(this.value)||0;render()"></div>
+    </div>
+    ${s.bizType === "patur" ? `<div class="small" style="color:#47541F;margin-top:6px">💚 ${G("עוסקת פטורה","עוסק פטור")}: בלי מע"מ ובלי מקדמות מס הכנסה — נשאר רק ביטוח לאומי (אם נקבע).</div>`
+      : `<div class="small muted" style="margin-top:6px">המספרים מופיעים במכתב הקביעה מרשות המסים ומביטוח לאומי, או אצל הרו"ח. לפי זה נבנה לך את לוח התשלומים הצפוי ואת יועץ המקדמות (בתכנון מס).</div>`}
+  </div>
+  <div class="panel">
     <h2>פרמטרים של מס (${tp.year})</h2>
-    <p class="desc">ערכים מקורבים לשנת ${tp.year}. מתעדכנים פעם בשנה — אפשר לבקש מקלוד לעדכן לפי הנתונים הרשמיים.</p>
+    <p class="desc">ערכים לשנת ${tp.year}, לפי הנתונים הרשמיים. מתעדכנים פעם בשנה אוטומטית בעדכון גרסה.</p>
     <div class="formGrid">
       <div><label>מע"מ</label><input type="number" step="0.01" value="${tp.vatRate}" onchange="TP('vatRate',this.value)"></div>
       <div><label>תקרת עוסק פטור (שנתי)</label><input type="number" value="${tp.paturCeiling}" onchange="TP('paturCeiling',this.value)"></div>
@@ -2564,11 +2806,15 @@ function renderSettings() {
       <div><label>סף ב"ל חודשי (60% שכר ממוצע)</label><input type="number" value="${tp.blThresholdMonthly}" onchange="TP('blThresholdMonthly',this.value)"></div>
     </div>
   </div>
-  <div class="panel">
+  ${advisorLocalSetup() ? `<div class="panel">
     <h2>חיבור לבנק</h2>
-    <p>הסנכרון רץ מקומית במחשב בלבד (תיקיית <code>sync</code>). אחרי ההגדרה הראשונית עם קלוד — מריצים בדאבל-קליק על <b>Sync_Bank.command</b> או מבקשים מקלוד "תסנכרני את הבנק".</p>
+    <p>הסנכרון רץ מקומית במחשב בלבד (תיקיית <code>sync</code>) ומתעדכן אוטומטית כל בוקר. אפשר גם ידנית — דאבל-קליק על <b>"סנכרן עכשיו.command"</b>.</p>
     <p class="small muted">חוקי סיווג שנלמדו: ${p.rules.length}</p>
-  </div>`;
+  </div>` : `<div class="panel">
+    <h2>חיבור לבנק</h2>
+    <p>🔌 חיבור אוטומטי לבנק ולכרטיסי האשראי — <b>בקרוב</b>. בינתיים אפשר להזין תנועות ידנית בתזרים, וכל החישובים עובדים בדיוק אותו דבר.</p>
+    <p class="small muted">חוקי סיווג שנלמדו: ${p.rules.length}</p>
+  </div>`}`;
 }
 function TP(key, val) { P().settings.taxParams[key] = Number(val); render(); }
 
@@ -2576,7 +2822,7 @@ function TP(key, val) { P().settings.taxParams[key] = Number(val); render(); }
 document.querySelectorAll("#tabs button[data-tab]").forEach(b =>
   b.addEventListener("click", () => { activeTab = b.dataset.tab; $("tabs").classList.remove("more-open"); render(); }));
 $("moreBtn").addEventListener("click", () => $("tabs").classList.toggle("more-open"));
-$("profileSelect").addEventListener("change", e => { DB.active = e.target.value; viewMonth = activeMonth(P()); render(); });
+$("profileSelect").addEventListener("change", e => { DB.active = e.target.value; tagStateTaxes(P()); viewMonth = activeMonth(P()); render(); });
 $("btnNewProfile").addEventListener("click", () => {
   const name = prompt("שם התיק החדש (למשל: לקוח — דנה):");
   if (!name) return;
@@ -2599,5 +2845,6 @@ if (importedNow > 0) console.log(`נקלטו ${importedNow} תנועות חדש�
 const clientsNow = mergeClientsData();
 if (clientsNow > 0) console.log(`עודכנו ${clientsNow} לקוחות מהאקסל`);
 tagSelfTransfers(P());          // העברות בין חשבונות עסקי/פרטי — לא נספרות פעמיים
+tagStateTaxes(P());             // תשלומי מדינה (מקדמות/מע"מ/ב"ל) — מסומנים 🏛️ ולא נספרים כהוצאה מוכרת
 viewMonth = activeMonth(P());   // פתיחה על החודש האחרון עם נתונים, לא על חודש ריק
 render();

@@ -1,7 +1,39 @@
 /* state.js — מודל נתונים, שמירה מקומית, תיקים, גיבוי */
 "use strict";
 
-const LS_KEY = "soleo_app_v1";
+const LS_KEY = "mally_findash_v1";
+
+/* איפוס מלא (טקס לקוחה-חדשה): פותחים את האפליקציה עם ‎#reset בסוף הכתובת —
+   האחסון המקומי נמחק ומתחילים מאפס עם שאלון ההיכרות. (הגיבוי תמיד קודם!) */
+if (typeof location !== "undefined" && location.hash === "#reset") {
+  try { localStorage.removeItem(LS_KEY); } catch (e) {}
+  try { history.replaceState(null, "", location.pathname); } catch (e) { location.hash = ""; }
+}
+
+/* ---------- זיהוי תשלומי מדינה (מפרט יועץ המקדמות, 16.7.2026) ----------
+   תנועות שליליות שהתיאור שלהן מעיד על תשלום לרשויות — מסומנות stateTax
+   ומסווגות אוטומטית לקטגוריית "תשלומי מסים למדינה" (לא מוכרת, לא בקיזוז מע"מ). */
+const STATE_TAX_RE = /ביטוח לאומי|בטוח לאומי|מס הכנסה|רשות המסים|מע"מ|שלטונות המס/;
+const STATE_TAX_CAT = "תשלומי מסים למדינה";
+/* סוג התשלום לפי התיאור: ב"ל / מע"מ / מקדמת מס הכנסה */
+function stateTaxKind(desc) {
+  if (/ביטוח לאומי|בטוח לאומי/.test(desc || "")) return "bl";
+  if (/מע"מ/.test(desc || "")) return "vat";
+  return "it";   // מס הכנסה / רשות המסים / שלטונות המס
+}
+/* עובר על כל התנועות ומסמן/מסווג תשלומי מדינה. מחזיר כמה השתנו. */
+function tagStateTaxes(p) {
+  const cat = (p.categories || []).find(c => c.name === STATE_TAX_CAT);
+  let n = 0;
+  for (const t of (p.transactions || [])) {
+    const isState = t.amount < 0 && STATE_TAX_RE.test(t.desc || "");
+    if (isState && !t.stateTax) { t.stateTax = true; n++; }
+    if (isState && cat && t.categoryId !== cat.id) { t.categoryId = cat.id; n++; }
+    if (!isState && t.stateTax) { delete t.stateTax; n++; }
+  }
+  if (n) save();
+  return n;
+}
 
 const DEFAULT_TAX_PARAMS = {
   year: 2026,
@@ -31,23 +63,27 @@ const DEFAULT_TAX_PARAMS = {
   employeeBlFull: 0.12         // מעל הסף
 };
 
-// קטגוריות ברירת מחדל — מותאמות בשאלון
+// קטגוריות ברירת מחדל — שמות בלבד, בלי סכומים. תקציבים אמיתיים נקבעים בשאלון הכניסה
+// (עיקרון "מקור אחד לאמת": אף מספר לא מוצג למשתמש אם הוא לא הזין אותו או הגיע מהבנק)
 const DEFAULT_CATEGORIES = [
-  { name: "שכר דירה",              tag: "personal", budget: 6600, deductible: true }, // חלק כמשרד ביתי
-  { name: "חשבונות",               tag: "personal", budget: 500, deductible: true },  // חשמל, ארנונה, טלפון, אינטרנט (חלק עסקי)
-  { name: "סופר וקניות לבית",      tag: "personal", budget: 1800 },
-  { name: "פארמה",                 tag: "personal", budget: 400 },  // טואלטיקה, ניקיון, בית מרקחת
-  { name: "קוסמטיקה",              tag: "personal", budget: 1200 }, // קוסמטיקאית/טיפולים
-  { name: "אקראיים",               tag: "personal", budget: 200 },  // קנסות/דוחות/תשלומים מיותרים/חד-פעמי
-  { name: "רכב",                   tag: "personal", budget: 1580, deductible: true }, // השכרה, חניה, מוסך, שטיפה (חלק עסקי)
-  { name: "דלק",                   tag: "personal", budget: 700 },
-  { name: "נטפליקס וספוטיפיי",     tag: "personal", budget: 57 },
-  { name: "ביגוד ואופנה",          tag: "personal", budget: 500 },
-  { name: "חדר כושר",              tag: "personal", budget: 200 },
-  { name: "מתנות והתפתחות אישית",  tag: "personal", budget: 1000, deductible: true }, // התפתחות מקצועית מוכרת
-  { name: "בילויים ומסעדות",       tag: "personal", budget: 900 },
+  { name: "שכר דירה",              tag: "personal", budget: 0, deductible: true }, // חלק כמשרד ביתי
+  { name: "חשבונות",               tag: "personal", budget: 0, deductible: true },  // חשמל, ארנונה, טלפון, אינטרנט (חלק עסקי)
+  { name: "סופר וקניות לבית",      tag: "personal", budget: 0 },
+  { name: "פארמה",                 tag: "personal", budget: 0 },  // טואלטיקה, ניקיון, בית מרקחת
+  { name: "קוסמטיקה",              tag: "personal", budget: 0 }, // קוסמטיקאית/טיפולים
+  { name: "אקראיים",               tag: "personal", budget: 0 },  // קנסות/דוחות/תשלומים מיותרים/חד-פעמי
+  { name: "רכב",                   tag: "personal", budget: 0, deductible: true }, // השכרה, חניה, מוסך, שטיפה (חלק עסקי)
+  { name: "דלק",                   tag: "personal", budget: 0 },
+  { name: "נטפליקס וספוטיפיי",     tag: "personal", budget: 0 },
+  { name: "ביגוד ואופנה",          tag: "personal", budget: 0 },
+  { name: "חדר כושר",              tag: "personal", budget: 0 },
+  { name: "מתנות והתפתחות אישית",  tag: "personal", budget: 0, deductible: true }, // התפתחות מקצועית מוכרת
+  { name: "בילויים ומסעדות",       tag: "personal", budget: 0 },
   { name: "החזרי הלוואות",         tag: "personal", budget: 0 },
-  { name: "הוצאות לעסק",           tag: "biz", budget: 2000, deductible: true }       // קורסים, שיווק, רו"ח, כלים
+  { name: "הוצאות לעסק",           tag: "biz", budget: 0, deductible: true },      // קורסים, שיווק, רו"ח, כלים
+  // תשלומי מסים למדינה (מקדמות מ"ה, מע"מ, ב"ל) — הוצאה אמיתית מהחשבון, אבל בשום מקרה לא "הוצאה מוכרת"
+  // (ב"ל מוכר 52% — מטופל במנוע דרך blDeductiblePct, לא דרך סיווג) ולא בקיזוז מע"מ תשומות
+  { name: "תשלומי מסים למדינה",    tag: "biz", budget: 0, deductible: false, vatDeductible: false }
 ];
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
@@ -60,8 +96,8 @@ function newProfile(name) {
       creditPoints: 2.75,
       openingBalance: 0,
       paymentTermsDays: 30,           // שוטף+30
-      goalMonthlyIncome: 40000,       // יעד הכנסה עסקית לחודש (לפני מע"מ)
-      goalMonthlySavings: 3000,
+      goalMonthlyIncome: 0,           // יעד הכנסה עסקית לחודש (לפני מע"מ) — נקבע בשאלון, לא ברירת מחדל שרירותית
+      goalMonthlySavings: 0,          // יעד חיסכון — רק אם המשתמש הגדיר
       payYourselfRate: 0.10,          // "שלם לעצמך קודם" — אחוז מהנטו החודשי שמפרישים לעצמך
       avgEngagementMonths: 12,        // משך ליווי ממוצע (ל-LTV)
       avgDealSize: 0,                 // ממוצע עסקה (לעסקים עם עסקאות משתנות; 0 = נגזר מהלקוחות)
@@ -94,22 +130,31 @@ function newProfile(name) {
   };
 }
 
-/* יעדי ברירת-מחדל לפי טווח — נוצרים בשאלון הכניסה (אפשר לערוך) */
-function defaultGoals() {
+/* יעדי ברירת-מחדל לפי טווח — נוצרים בשאלון הכניסה (אפשר לערוך).
+   קרן הביטחון מותאמת להכנסה שהוצהרה (3 חודשים), לא מספר שרירותי. */
+function defaultGoals(monthlyIncome) {
+  const safety = monthlyIncome > 0 ? Math.max(5000, Math.round(monthlyIncome * 3 / 500) * 500) : 60000;
   return [
-    { id: uid(), name: "קרן ביטחון (3 חודשי הוצאות)", targetAmount: 60000,  savedAmount: 0, horizon: "short", months: 12, icon: "🛟" },
+    { id: uid(), name: "קרן ביטחון (3 חודשי הוצאות)", targetAmount: safety,  savedAmount: 0, horizon: "short", months: 12, icon: "🛟" },
     { id: uid(), name: "רכב / שדרוג לעסק",             targetAmount: 94000,  savedAmount: 0, horizon: "mid",   months: 36, icon: "🚗" },
     { id: uid(), name: "חופש כלכלי",                   targetAmount: 1000000, savedAmount: 0, horizon: "long",  months: 120, icon: "🌴" }
   ];
 }
 
+/* תוכנית חופש גנרית — מתעדכנת מתרגיל החופש בשאלון הכניסה */
 function defaultFreedomPlan() {
   const y = new Date().getFullYear();
   return {
-    annualSpendTarget: 480000,   // ברירת מחדל — מתעדכן מתרגיל החופש בשאלון
-    withdrawalRate: 0.04, currentNetWorth: 0,
-    seedCapital: 0, seedYear: y + 1, startYear: y + 1, startMonthly: 3000,
-    annualGrowth: 0.10, annualReturn: 0.08, horizonYears: 15,
+    annualSpendTarget: 480000,    // כמה תוציא/י בשנה בחיים שחלמת עליהם (ברירת מחדל — מתעדכן בשאלון)
+    withdrawalRate: 0.04,         // כלל המשיכה הבטוחה — מספר החופש נגזר מזה
+    currentNetWorth: 0,           // מה שכבר צברת היום (השקעות, חסכונות, נדל"ן)
+    seedCapital: 0,               // הון פתיחה חד-פעמי (אם יש)
+    seedYear: y + 1,              // השנה שבה ההון הזה נכנס להשקעה
+    startYear: y + 1,             // השנה שמתחילים להשקיע באופן שוטף
+    startMonthly: 3000,           // השקעה חודשית התחלתית
+    annualGrowth: 0.10,           // בכמה % גדל הסכום החודשי בכל שנה (צמיחת העסק)
+    annualReturn: 0.08,           // תשואה שנתית צפויה על ההשקעות
+    horizonYears: 15,             // אופק היעד לבדיקה
     milestones: []
   };
 }
@@ -125,6 +170,16 @@ function migrate() {
     if (!p.investments) p.investments = [];
     if (p.settings.taxReserveRate == null) p.settings.taxReserveRate = 0.19;
     if (p.settings.niReserveRate == null) p.settings.niReserveRate = 0.11;
+    // מקדמות ותשלומי מדינה (מפרט 16.7.2026): ברירת מחדל 0 = לא נקבעו מקדמות (מזהים מהבנק).
+    // בתיק הראשי של בעלת האפליקציה — קביעת הרו"ח נטענת מהבלוק האישי (לא קיים בגרסה הציבורית)
+    if (typeof applyOwnerTaxDefaults === "function") applyOwnerTaxDefaults(id, p);
+    if (p.settings.mikdamaRate == null) p.settings.mikdamaRate = 0;
+    if (!p.settings.mikdamaFreq) p.settings.mikdamaFreq = "2m";
+    if (p.settings.blMonthlyAdvance == null) p.settings.blMonthlyAdvance = 0;
+    // קטגוריית "תשלומי מסים למדינה" — קיימת בכל תיק, ותמיד לא-מוכרת ולא בקיזוז מע"מ
+    const stc = p.categories.find(c => c.name === STATE_TAX_CAT);
+    if (!stc) p.categories.push({ id: uid(), name: STATE_TAX_CAT, tag: "biz", budget: 0, deductible: false, vatDeductible: false });
+    else { stc.tag = "biz"; stc.deductible = false; stc.vatDeductible = false; }
     if (p.settings.avgDealSize == null) p.settings.avgDealSize = 0;
     if (p.settings.payYourselfRate == null) p.settings.payYourselfRate = 0.10;
     if (!p.settings.gender) p.settings.gender = "f";
@@ -158,7 +213,7 @@ function load() {
       if (db && db.profiles && db.active) return db;
     }
   } catch (e) { console.warn("load failed", e); }
-  return { profiles: { main: newProfile("התיק שלי") }, active: "main" };   // גרסה ציבורית: תיק נקי, השאלון יוביל את ההקמה
+  return { profiles: { main: newProfile("התיק שלי") }, active: "main" };   // גרסה ציבורית: תיק נקי, השאלון מוביל את ההקמה
 }
 
 function save() {

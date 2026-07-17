@@ -56,6 +56,11 @@ function monthDiff(a, b) {
   return (by - ay) * 12 + (bm - am);
 }
 
+/* ---------- עלות עובדים חודשית (עלות מעביד) — חלק מהוצאות העסק בכל חישוב ---------- */
+function employeeCostMonthly(p) {
+  return (p.employees || []).reduce((s, e) => s + Math.round((e.salary || 0) * (e.factor || 1.34)), 0);
+}
+
 /* ---------- תחזית 12 חודשים ---------- */
 function buildForecast(p, mults) {
   const m = mults || { clientsMult: 1, priceMult: 1, expenseMult: 1 };
@@ -63,10 +68,16 @@ function buildForecast(p, mults) {
   const months = monthsAhead(FORECAST_MONTHS);
   const base = months[0];
 
+  const empCost = employeeCostMonthly(p);
   const bizBudget = p.categories.filter(c => c.tag === "biz").reduce((s, c) => s + (c.budget || 0), 0);
   const personalBudget = p.categories.filter(c => c.tag === "personal").reduce((s, c) => s + (c.budget || 0), 0);
   const vatDeductibleBudget = p.categories.filter(c => c.tag === "biz" && c.vatDeductible)
     .reduce((s, c) => s + (c.budget || 0), 0);
+
+  // הכנסה קבועה שהוצהרה (שאלון/הכנסות קבועות) — רשת ביטחון לתחזית כשטבלת הלקוחות לא משקפת את העסק
+  const isVatBiz = p.settings.bizType === "morasheh" || p.settings.bizType === "baam";
+  const recurringIncome = (p.recurring || []).filter(r => r.kind === "income" && r.amount > 0)
+    .reduce((s, r) => s + (r.vatInclusive && isVatBiz ? r.amount / (1 + (tp.vatRate || 0.18)) : r.amount), 0);
 
   const rows = months.map(ymStr => {
     let clientIncome = 0;
@@ -85,11 +96,25 @@ function buildForecast(p, mults) {
     extra *= m.priceMult;
 
     const bizIncome = clientIncome + extra;
-    const bizExpense = bizBudget * m.expenseMult;
+    const bizExpense = bizBudget * m.expenseMult + empCost;
     const personalExpense = personalBudget * m.expenseMult;
     return { ym: ymStr, clientIncome, extra, bizIncome, bizExpense, personalExpense,
              profit: bizIncome - bizExpense };
   });
+
+  // אם טבלת הלקוחות מכסה פחות מחצי מההכנסה המוצהרת (משתמש חדש שעוד לא מילא לקוחות) —
+  // התחזית נופלת בחן להכנסה מהשאלון במקום להציג עתיד שחור.
+  // כשהטבלה כבר משקפת את העסק (50%+) — היא המקור, כולל ה"נמסה" שמזינה את מנוע הגיוס.
+  const baseline = recurringIncome * m.priceMult;
+  const usesBaseline = baseline > 0 && rows[0].bizIncome < baseline * 0.5;
+  if (usesBaseline) {
+    rows.forEach(r => {
+      if (r.bizIncome < baseline) {
+        r.bizIncome = baseline;
+        r.profit = r.bizIncome - r.bizExpense;
+      }
+    });
+  }
 
   const annual = {
     bizIncome: rows.reduce((s, r) => s + r.bizIncome, 0),
@@ -125,7 +150,8 @@ function buildForecast(p, mults) {
     r.netAfterTax = r.profit - monthlyTax - monthlyVat * 0; // נטו עסקי אחרי מס (מע"מ אינו הוצאה)
   });
 
-  return { months, rows, annual, tax, vat, monthlyTax, monthlyVat };
+  return { months, rows, annual, tax, vat, monthlyTax, monthlyVat,
+           usesBaseline, baselineMonthly: usesBaseline ? baseline : 0 };
 }
 
 /* ---------- רווחיות אמיתית: כמה % מהמחזור באמת נשאר בכיס ---------- */
@@ -154,14 +180,31 @@ function profitability(p) {
   };
 }
 
-/* ---------- כסף לשים בצד למדינה (בשפה פשוטה) ---------- */
+/* ---------- כסף לשים בצד למדינה (בשפה פשוטה) ----------
+   מקור אחד לאמת: ההכנסה העסקית שנכנסה בפועל מהבנק החודש (בדיוק כמו המסך החצוי),
+   עם קיזוז מע"מ תשומות. אם אין עדיין תנועות — נופל להכנסה הקבועה שהוצהרה בשאלון. */
 function stateMoneyPlan(p) {
-  const monthlyIncome = (p.recurring || []).filter(r => r.kind === "income").reduce((s, r) => s + r.amount, 0);
+  const M = activeMonth(p);
+  let monthlyIncome = 0, src = "actual";
+  try { monthlyIncome = bizHomeSplit(p, M).biz.income; } catch (e) {}
+  if (!(monthlyIncome > 0)) {
+    monthlyIncome = (p.recurring || []).filter(r => r.kind === "income" && r.amount > 0).reduce((s, r) => s + r.amount, 0);
+    src = "recurring";
+  }
   if (monthlyIncome <= 0) return null;
-  const r = stateReservation(monthlyIncome, p, true);
+  const ia = incomeAside(p, monthlyIncome);
+  const inVat = src === "actual" ? monthlyInputVat(p, M) : 0;
+  const vat = Math.max(0, ia.vat - inVat);
+  // פיצול מס הכנסה / ביטוח לאומי לפי המדרגות האמיתיות (ואם אין היסטוריה — לפי היחס שבהגדרות)
+  const eff = selfTaxEffectiveRate(p);
+  let itShare = 0.63;
+  if (eff.breakdown && (eff.breakdown.incomeTax + eff.breakdown.bituachLeumi) > 0)
+    itShare = eff.breakdown.incomeTax / (eff.breakdown.incomeTax + eff.breakdown.bituachLeumi);
+  const tax = ia.taxNi * itShare, ni = ia.taxNi * (1 - itShare);
+  const perMonth = vat + ia.taxNi;
   const HE = ["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
-  const upcoming = monthsAhead(3).map(ym => ({ label: HE[(+ym.split("-")[1]) - 1] || ym, amount: r.toState }));
-  return { monthlyIncome, perMonth: r.toState, vat: r.vat, tax: r.incomeTax, ni: r.ni, yours: r.yours, upcoming };
+  const upcoming = monthsAhead(3).map(ym => ({ label: HE[(+ym.split("-")[1]) - 1] || ym, amount: perMonth }));
+  return { monthlyIncome, perMonth, vat, tax, ni, yours: monthlyIncome - perMonth, upcoming, src, inVat };
 }
 
 /* ---------- החודש להצגה: הנוכחי אם יש בו נתונים, אחרת האחרון עם תנועות ---------- */
@@ -217,9 +260,10 @@ function impulseCheck(p, amount) {
   const be = breakeven(p);
   const avgFee = be.avgFee || 0;
   const avgDeal = p.settings.avgDealSize || avgFee || 0;
-  // כמה צריך להביא ברוטו כדי שיישאר נטו לקנייה (כי חלק הולך למס)
+  // כמה צריך להביא ברוטו כדי שיישאר נטו לקנייה (כי חלק הולך למס+מע"מ)
+  // אותו שיעור הפרשה כמו בכל האפליקציה (incomeAside) — מקור אחד לאמת
   let effRate = 0.30;
-  try { const tpn = taxPlanning(p); if (tpn && tpn.effectiveRate > 0) effRate = tpn.effectiveRate; } catch (e) {}
+  try { const ia = incomeAside(p, 1000); if (ia && ia.aside > 0) effRate = ia.aside / 1000; } catch (e) {}
   const grossNeeded = amount / (1 - Math.min(0.6, effRate));
   const dealsForGross = avgDeal > 0 ? grossNeeded / avgDeal : null;
   // החלופה: לשים את הסכום לעבר היעד הקרוב → כמה חודשים מוקדם יותר תגיע
@@ -271,6 +315,14 @@ function marginalRateOf(p) {
   return r;
 }
 
+/* שיעור ב"ל שולי לפי הרווח בפועל: מתחת לסף החודשי — השיעור המופחת (7.7%), מעליו — המלא (18%) */
+function marginalBlRateOf(p) {
+  const tp = p.settings.taxParams || DEFAULT_TAX_PARAMS;
+  let monthlyProfit = 0;
+  try { monthlyProfit = Math.max(0, buildForecast(p).annual.profit) / 12; } catch (e) {}
+  return monthlyProfit > (tp.blThresholdMonthly || 7710) ? (tp.blFullRate || 0.18) : (tp.blReducedRate || 0.077);
+}
+
 /* ---------- כמה כסף חוזר לך מכל הוצאה מוכרת (מס הכנסה + ב"ל + מע"מ) ---------- */
 function deductibleTaxImpact(p) {
   const tp = p.settings.taxParams;
@@ -287,7 +339,7 @@ function deductibleTaxImpact(p) {
   const netExpense = deductibleAnnual - vatBack;                 // ההוצאה נטו (בלי המע"מ שחזר)
   const mr = marginalRateOf(p);
   const incomeTaxBack = netExpense * mr;                          // ההוצאה מקטינה את הרווח החייב
-  const niBack = netExpense * (tp.blFullRate || 0.12) * (1 - (tp.blDeductiblePct || 0.52) * 0);  // הערכה גסה לב"ל
+  const niBack = netExpense * marginalBlRateOf(p);                // ב"ל לפי המדרגה האמיתית (מופחת/מלא)
   const totalBack = vatBack + incomeTaxBack + niBack;
   const per100 = deductibleAnnual > 0 ? Math.round(totalBack / deductibleAnnual * 100) : 0;
   return {
@@ -372,7 +424,8 @@ function floorPrice(p) {
   return {
     active, neededMonthly, floorPerClient, currentAvg,
     gap, gapPct: currentAvg > 0 ? gap / currentAvg : 0,
-    underpriced: gap > 0 && currentAvg > 0, avgAuto: ad.auto
+    // ממליצים על העלאת מחיר רק כשנקודת האיזון מבוססת על נתונים אמיתיים של המשתמש
+    underpriced: gap > 0 && currentAvg > 0 && be.hasData, avgAuto: ad.auto, hasData: be.hasData
   };
 }
 
@@ -449,8 +502,10 @@ function stateReservation(grossIncome, p, vatInclusive = true) {
   const niRate = p.settings.niReserveRate || 0.11;
   const bizMonthly = p.categories.filter(c => c.tag === "biz").reduce((s, c) => s + (c.budget || 0), 0);
 
-  const exVat = vatInclusive ? grossIncome / (1 + tp.vatRate) : grossIncome;
-  const vat = Math.max(0, (grossIncome - exVat) * 0.9);     // פחות ~מע"מ תשומות
+  // עוסק פטור לא גובה ולא מפריש מע"מ — אפס מע"מ בכל מסך
+  const isVatBiz = p.settings.bizType === "morasheh" || p.settings.bizType === "baam";
+  const exVat = (vatInclusive && isVatBiz) ? grossIncome / (1 + tp.vatRate) : grossIncome;
+  const vat = isVatBiz ? Math.max(0, (grossIncome - exVat) * 0.9) : 0;     // פחות ~מע"מ תשומות
   const profit = Math.max(0, exVat - bizMonthly);
   const incomeTax = profit * taxRate;
   const ni = profit * niRate;
@@ -463,7 +518,10 @@ function projectedCashflow(p, days = 45) {
   const tp = p.settings.taxParams;
   const rate = p.settings.taxReserveRate || 0.19;
   const bizMonthly = p.categories.filter(c => c.tag === "biz").reduce((s, c) => s + (c.budget || 0), 0);
-  const bal0 = (window.BANK_DATA && window.BANK_DATA.accounts || []).reduce((s, a) => s + (Number(a.balance) || 0), 0);
+  const bankAccounts = (window.BANK_DATA && window.BANK_DATA.accounts) || [];
+  // בלי בנק מחובר — מתחילים מיתרת הפתיחה שבהגדרות (ולא מ-0 מפחיד)
+  const bal0 = bankAccounts.length ? bankAccounts.reduce((s, a) => s + (Number(a.balance) || 0), 0)
+                                   : (p.settings.openingBalance || 0);
   const start = new Date(); start.setHours(0, 0, 0, 0);
 
   const events = [];
@@ -473,6 +531,20 @@ function projectedCashflow(p, days = 45) {
       if (r.day === date.getDate()) events.push({ date: new Date(date), name: r.name, amount: r.amount, kind: r.kind, vatInclusive: r.vatInclusive, note: r.note });
     }
   }
+  // 🏛️ תשלומי המדינה הצפויים (מע"מ + מקדמת מ"ה + ב"ל) — נכנסים לתזרים עם תאריך.
+  // אם ב"ל כבר מוגדר כהוצאה קבועה — לא מוסיפים שוב (בלי כפל).
+  const endDate = new Date(start); endDate.setDate(start.getDate() + days);
+  const hasBlRecurring = (p.recurring || []).some(r => r.kind === "expense" && /ביטוח לאומי|בטוח לאומי/.test(r.name || ""));
+  try {
+    for (const sp of upcomingStatePayments(p, Math.ceil(days / 30) + 1)) {
+      if (sp.date < start || sp.date > endDate) continue;
+      for (const it of sp.items) {
+        if (it.kind === "bl" && hasBlRecurring) continue;
+        events.push({ date: new Date(sp.date), name: "🏛️ " + it.label, amount: -Math.round(it.amount),
+          kind: "expense", vatInclusive: false, note: it.est ? "הערכה חיה מהבנק" : "לפי ההגדרות", state: true });
+      }
+    }
+  } catch (e) {}
   events.sort((a, b) => a.date - b.date);
 
   let bal = bal0, low = { bal: bal0, date: start }, vatReserve = 0, taxReserve = 0, niReserve = 0;
@@ -487,7 +559,7 @@ function projectedCashflow(p, days = 45) {
   }
   const toState = vatReserve + taxReserve + niReserve;
   return { bal0, events, end: bal, low, vatReserve, taxReserve, niReserve, toState,
-           realYours: bal - toState, hasBank: bal0 > 0 };
+           realYours: bal - toState, hasBank: bankAccounts.length > 0 && bal0 !== 0 };
 }
 
 /* ---------- התחייבויות מתמשכות (תשלומים) ותכנון קדימה ---------- */
@@ -546,7 +618,8 @@ function profitForNet(targetNetAnnual, cp, tp) {
 function breakeven(p) {
   const tp = p.settings.taxParams, cp = p.settings.creditPoints;
   const personalMonthly = p.categories.filter(c => c.tag === "personal").reduce((s, c) => s + (c.budget || 0), 0);
-  const bizMonthly = p.categories.filter(c => c.tag === "biz").reduce((s, c) => s + (c.budget || 0), 0);
+  const empCost = employeeCostMonthly(p);          // עלות העובדים — חלק מנקודת האיזון
+  const bizMonthly = p.categories.filter(c => c.tag === "biz").reduce((s, c) => s + (c.budget || 0), 0) + empCost;
   const savings = p.settings.goalMonthlySavings || 0;
 
   const neededProfitAnnual = profitForNet((personalMonthly + savings) * 12, cp, tp);
@@ -555,10 +628,12 @@ function breakeven(p) {
   const activeFees = p.clients.filter(c => (c.paymentsLeft || 0) > 0).map(c => c.monthlyFee || 0);
   const avgFee = activeFees.length ? activeFees.reduce((a, b) => a + b, 0) / activeFees.length : 0;
   return {
-    personalMonthly, bizMonthly, savings,
+    personalMonthly, bizMonthly, empCost, savings,
     neededIncomeMonthly,
     neededClients: avgFee > 0 ? Math.ceil(neededIncomeMonthly / avgFee) : null,
-    avgFee
+    avgFee,
+    // האם נקודת האיזון מבוססת על נתונים שהמשתמש באמת הזין (ולא על ברירות מחדל ריקות)
+    hasData: (personalMonthly + savings) > 0
   };
 }
 
@@ -613,19 +688,31 @@ function recruitmentPlan(p) {
 function tagSelfTransfers(p) {
   const txs = p.transactions || [];
   txs.forEach(t => { t.transfer = !!t.transferManual; });   // סימון ידני (למשל העברה לחשבון שלא מחובר) נשמר
-  const negatives = txs.filter(t => t.amount < 0 && t.source === "bank");
-  const positives = txs.filter(t => t.amount > 0 && t.source === "bank");
+  // גם תנועות שהוזנו ידנית נבדקות — למשתמש עם שני חשבונות שמזין העברות בעצמו
+  const negatives = txs.filter(t => t.amount < 0 && (t.source === "bank" || t.source === "manual"));
+  const positives = txs.filter(t => t.amount > 0 && (t.source === "bank" || t.source === "manual"));
   let n = 0;
   for (const pos of positives) {
     if (pos.transfer) continue;
     const match = negatives.find(neg => !neg.transfer &&
       Math.abs(Math.abs(neg.amount) - pos.amount) < 1 &&
-      neg.account !== pos.account &&
+      // חשבונות שונים, או שלפחות לאחת אין שם חשבון (הזנה ידנית)
+      (neg.account !== pos.account || !neg.account || !pos.account) &&
       Math.abs(new Date(neg.date) - new Date(pos.date)) <= 3 * 864e5 &&
       /העבר|transfer|לחשבון|מחשבון/i.test((neg.desc || "") + (pos.desc || "")));
     if (match) { pos.transfer = true; match.transfer = true; n += 2; }
   }
   return n;
+}
+
+/* סימון ידני של העברה: מסמן גם את הצד השני של הזוג אוטומטית — לחיצה אחת במקום שתיים */
+function markTransferPair(p, t) {
+  const counterpart = (p.transactions || []).find(o => o !== t && !o.transfer &&
+    Math.abs(Math.abs(o.amount) - Math.abs(t.amount)) < 1 &&
+    Math.sign(o.amount) === -Math.sign(t.amount) &&
+    Math.abs(new Date(o.date) - new Date(t.date)) <= 3 * 864e5);
+  if (counterpart) counterpart.transferManual = t.transferManual;
+  return counterpart;
 }
 
 /* כסף שנכנס שהוא החזר ולא הכנסה: זיכוי על כרטיס אשראי, או תיאור של החזר/זיכוי */
@@ -767,6 +854,55 @@ function productEconomics(p) {
   });
 }
 
+/* ---------- מע"מ תשומות + "כמה חסכת החודש" (התובנה של הרו"ח של מלי, 16.7) ----------
+   מע"מ לתשלום אמיתי = מע"מ עסקאות פחות מע"מ תשומות (הוצאות מוכרות-מע"מ).
+   בלי הקיזוז האפליקציה מפחידה ב-אלפי שקלים מיותרים. */
+function monthlyInputVat(p, ymStr) {
+  if (!(p.settings.bizType === "morasheh" || p.settings.bizType === "baam")) return 0;
+  const act = actualsForMonth(p, ymStr);
+  const tp = p.settings.taxParams || DEFAULT_TAX_PARAMS;
+  const vr = tp.vatRate || 0.18;
+  let vatSpend = 0;
+  for (const c of (p.categories || []))
+    if (c.tag === "biz" && c.deductible && c.vatDeductible) vatSpend += (act.byCat[c.id] || 0);
+  return vatSpend * vr / (1 + vr);
+}
+
+/* כמה כסף ההוצאות המוכרות חסכו החודש: מע"מ שקוזז + מס הכנסה וב"ל שירדו */
+function monthlySavings(p, ymStr) {
+  const act = actualsForMonth(p, ymStr);
+  const tp = p.settings.taxParams || DEFAULT_TAX_PARAMS;
+  const vr = tp.vatRate || 0.18;
+  const isVat = p.settings.bizType === "morasheh" || p.settings.bizType === "baam";
+  let dedSpend = 0, vatSpend = 0;
+  for (const c of (p.categories || [])) {
+    if (c.tag === "biz" && c.deductible) {
+      const s = act.byCat[c.id] || 0;
+      dedSpend += s;
+      if (c.vatDeductible) vatSpend += s;
+    }
+  }
+  const vatBack = isVat ? vatSpend * vr / (1 + vr) : 0;
+  const netDed = dedSpend - vatBack;
+  const mr = marginalRateOf(p);
+  const itBack = netDed * mr;
+  const niBack = netDed * marginalBlRateOf(p);
+  return { vatBack, itBack, niBack, total: vatBack + itBack + niBack, dedSpend, marginalRate: mr };
+}
+
+/* כמה יחזור מרכישה עסקית מוכרת בסכום נתון (למסך "לפני שקונים") */
+function purchaseTaxBack(p, amount) {
+  const tp = p.settings.taxParams || DEFAULT_TAX_PARAMS;
+  const vr = tp.vatRate || 0.18;
+  const isVat = p.settings.bizType === "morasheh" || p.settings.bizType === "baam";
+  const vatBack = isVat ? amount * vr / (1 + vr) : 0;
+  const net = amount - vatBack;
+  const mr = marginalRateOf(p);
+  const itBack = net * mr;
+  const niBack = net * marginalBlRateOf(p);
+  return { vatBack, itBack, niBack, total: vatBack + itBack + niBack, realCost: amount - (vatBack + itBack + niBack) };
+}
+
 /* איזה חשבון בנק הוא של העסק? זה שמקבל הכי הרבה הכנסות אמיתיות */
 function bizAccountGuess(p) {
   const sums = {};
@@ -906,7 +1042,7 @@ function paymentsSummary(p) {
            budgetPct: budgetTotal > 0 ? totalMonthly / budgetTotal : 0 };
 }
 
-/* ---------- מרכז פעולות: "מה לעשות עכשׁו" — אוסף צעדים מכל האפליקציה ---------- */
+/* ---------- מרכז פעולות: "מה לעשות עכשיו" — אוסף צעדים מכל האפליקציה ---------- */
 function actionCenter(p) {
   const items = [];
   const push = (priority, icon, title, detail, steps, cta, ctaTxt) =>
@@ -916,12 +1052,12 @@ function actionCenter(p) {
     const t = taxPlanning(p);
     if (t.kh && t.khRoom > 0)
       push(1, "💰", "להפקיד לקרן השתלמות", `יש לך עוד ${fmt(t.khRoom)} מקום השנה — הפקדה שם תחסוך לך בערך ${fmt(t.khSaving)} במס, והכסף נשאר שלך.`,
-        [`העבר עד ${fmt(t.khLimit)} לקרן לפני 31.12 (ועד 20,566 ₪ — פטור מלא על הרווחים)`, "בסוף השנה הקרן שולחת \"אישור הפקדות\" — מעבירים לרו\"ח וזה מה שמוריד את המס"], "invest", "לקרן ההשתלמות");
+        [`${G("העבירי","העבר")} עד ${fmt(t.khLimit)} לקרן לפני 31.12 (ועד 20,566 ₪ — פטור מלא על הרווחים)`, "בסוף השנה הקרן שולחת \"אישור הפקדות\" — מעבירים לרו\"ח וזה מה שמוריד את המס"], "invest", "לקרן ההשתלמות");
     else if (!t.kh)
-      push(1, "💰", "לפתוח קרן השתלמות — עשינו לך סקר שוק", "החיסכון הכי משתלם לעצמאי: מקטין מס והכסף נשאר שלך. בדקנו את כל הקרנות (יולי 2026, נתוני גמל-נט) — הנה בדיוק מה לעשות:",
-        ["🥇 המובילה בסקר: אנליסט (תשואה 54.7% ב-5 שנים, דמי ניהול 0.62%). קרובות: מור וכלל",
-         "מתקשרים לאנליסט (או נכנסים לאתר) ואומרים: \"אני עצמאי/ת ורוצה לפתוח קרן השתלמות לעצמאים\"",
-         "מתמקחים על דמי הניהול — לא לסגור מעל 0.6%",
+      push(1, "💰", "לפתוח קרן השתלמות לעצמאים", "החיסכון הכי משתלם לעצמאי: מקטין מס והכסף נשאר שלך. ככה עושים את זה:",
+        ["משווים דמי ניהול ותשואות בין בתי ההשקעות באתר הרשמי גמל-נט (של רשות שוק ההון) ובוחרים",
+         "מתקשרים או נכנסים לאתר ואומרים: \"אני עצמאי/ת ורוצה לפתוח קרן השתלמות לעצמאים\"",
+         "מתמקחים על דמי הניהול — שווה לבקש פחות מ-0.7%",
          `מפקידים עד ${fmt(t.khLimit)} לפני 31.12 (הטבת מס מיידית), או עד 20,566 ₪ לפטור מלא על הרווחים`,
          "בסוף השנה מגיע \"אישור הפקדות\" מהקרן — מעבירים לרו\"ח, וזה מה שמוריד את המס בפועל",
          "(מידע כללי, לא ייעוץ השקעות — אישור סופי אצל רו\"ח)"], null, null);
@@ -935,21 +1071,182 @@ function actionCenter(p) {
       [`העבר ${fmt(sv.gap)} לחשבון חיסכון/השקעה נפרד`], "goals", "ליעדים"); } catch (e) {}
   // מחיר רצפה
   try { const fp = floorPrice(p); if (fp.underpriced)
-    push(2, "🏷️", "לשקול העלאת מחיר", `אתה מתמחר נמוך בערך ${fmt(Math.round(fp.gap))} ללקוח מתחת למחיר הרצפה.`,
-      ["העלה מחיר בהדרגה ללקוחות קיימים", "תמחר לקוחות חדשים לפי מחיר הרצפה"], "grow", "למחיר הרצפה"); } catch (e) {}
+    push(2, "🏷️", "לשקול העלאת מחיר", `${G("את מתמחרת","אתה מתמחר")} נמוך בערך ${fmt(Math.round(fp.gap))} ללקוח מתחת למחיר הרצפה.`,
+      [`${G("העלי","העלה")} מחיר בהדרגה ללקוחות קיימים`, `${G("תמחרי","תמחר")} לקוחות חדשים לפי מחיר הרצפה`], "grow", "למחיר הרצפה"); } catch (e) {}
   // חריגות תקציב
   try { budgetStatus(p, activeMonth(p)).filter(b => b.level === "red" && b.cat.budget > 0)
       .sort((a, b) => (b.spent - b.cat.budget) - (a.spent - a.cat.budget)).slice(0, 2)
       .forEach(b => push(2, "📊", `לבדוק חריגה ב"${b.cat.name}"`, `הוצאת ${fmt(b.spent - b.cat.budget)} מעל התקציב.`,
-        ["פתח 🔍 בתקציבים וראה מה גרם", "בדוק אם חלק שייך לתחום אחר"], "budgets", "לתקציבים")); } catch (e) {}
+        [`${G("פתחי","פתח")} 🔍 בתקציבים ${G("וראי","וראה")} מה גרם`, `${G("בדקי","בדוק")} אם חלק שייך לתחום אחר`], "budgets", "לתקציבים")); } catch (e) {}
   // תנועות לא מסווגות
   const unc = (p.transactions || []).filter(t => t.amount < 0 && !t.categoryId).length;
   if (unc >= 5) push(3, "✨", "לסווג תנועות", `יש ${unc} תנועות שעדיין לא מסווגות — סיווג עוזר לדוח לרו"ח ולתקציב.`,
     ["בתקציבים לחץ \"מיין תנועות אוטומטית\""], "budgets", "למיון");
   // דייט חודשי
-  if (p.lastMoneyDate !== thisMonth()) push(3, "📅", "לעשות את הדייט החודשי", "5 דקות לראות איפה אתה עומד החודש — הכל במקום אחד.", [], "moneydate", "לדייט");
+  if (p.lastMoneyDate !== thisMonth()) push(3, "📅", "לעשות את הדייט החודשי", `5 דקות לראות איפה ${G("את עומדת","אתה עומד")} החודש — הכל במקום אחד.`, [], "moneydate", "לדייט");
   items.sort((a, b) => a.priority - b.priority);
   return items;
+}
+
+/* ==================== יועץ המקדמות ולוח תשלומי המדינה (מפרט 16.7.2026) ====================
+   עיקרון-על: מקור אחד לאמת = הבנק. "שולם" = תשלומי המדינה שזוהו בתנועות (stateTax);
+   "נצבר" = מדרגות המס האמיתיות על הרווח (מחזור נטו − הוצאות מוכרות) מאותן תנועות. */
+
+/* תקופת מע"מ קבועה (ינו-פבר, מרץ-אפר, מאי-יוני...) שהחודש שייך אליה */
+function vatPeriodOf(ym) {
+  const parts = String(ym).split("-");
+  const y = Number(parts[0]), m = Number(parts[1]);
+  const start = m % 2 === 1 ? m : m - 1;
+  const two = n => String(n).padStart(2, "0");
+  return [`${y}-${two(start)}`, `${y}-${two(start + 1)}`];
+}
+
+/* הוצאות מוכרות שסווגו בחודש (ברוטו, כולל מע"מ) — לחישוב הרווח שנצבר */
+function monthlyDeductibleSpend(p, ymStr) {
+  const act = actualsForMonth(p, ymStr);
+  let s = 0;
+  for (const c of (p.categories || []))
+    if (c.tag === "biz" && c.deductible) s += Math.max(0, act.byCat[c.id] || 0);
+  return s;
+}
+
+/* תשלומי מדינה ששולמו בפועל (מהבנק, לפי הזיהוי ב-tagStateTaxes) בחודשים נתונים, לפי סוג */
+function statePaidInMonths(p, months) {
+  const out = { bl: 0, it: 0, vat: 0, total: 0, txs: [] };
+  for (const t of (p.transactions || [])) {
+    if (!t.stateTax || !(t.amount < 0)) continue;
+    if (!months.includes((t.date || "").slice(0, 7))) continue;
+    const k = stateTaxKind(t.desc || "");
+    out[k] += -t.amount; out.total += -t.amount; out.txs.push(t);
+  }
+  return out;
+}
+
+/* התקופה האחרונה שכבר הסתיימה (לפי תדירות המקדמות) */
+function lastClosedPeriod(p) {
+  const cur = thisMonth();
+  if (((p.settings || {}).mikdamaFreq || "2m") === "m") return [addMonths(cur, -1)];
+  let per = vatPeriodOf(addMonths(cur, -1));
+  if (per[1] >= cur) per = vatPeriodOf(addMonths(per[0], -1));
+  return per;
+}
+
+/* יועץ המקדמות: שולם בפועל (מהבנק) מול מה שנצבר באמת (מדרגות על הרווח) — לתקופה האחרונה שהסתיימה */
+function mikdamotAdvisor(p) {
+  const s = p.settings || {}, tp = s.taxParams || DEFAULT_TAX_PARAMS;
+  if (s.bizType === "patur") return { patur: true };   // עוסק פטור: אפס מע"מ ואפס מקדמות מס הכנסה
+  const months = lastClosedPeriod(p);
+  const isVat = s.bizType === "morasheh" || s.bizType === "baam";
+  const vr = tp.vatRate || 0.18;
+  let grossIncome = 0, dedGross = 0;
+  months.forEach(m => {
+    try { grossIncome += bizHomeSplit(p, m).biz.income; } catch (e) {}
+    dedGross += monthlyDeductibleSpend(p, m);
+  });
+  if (!(grossIncome > 0)) return { months, hasData: false };
+  const netIncome = grossIncome / (isVat ? 1 + vr : 1);          // מחזור נטו ממע"מ
+  const netDed = dedGross / (isVat ? 1 + vr : 1);
+  const profit = Math.max(0, netIncome - netDed);                // הרווח שנצבר בתקופה
+  const cp = s.creditPoints != null ? s.creditPoints : 2.75;
+  const annual = selfEmployedTax(profit * 12 / months.length, cp, tp);
+  const accruedIt = annual.incomeTax * months.length / 12;
+  const accruedBl = annual.bituachLeumi * months.length / 12;
+  const accrued = accruedIt + accruedBl;
+  // שולם בפועל: ב"ל בחודשי התקופה; מקדמות מ"ה — כולל חודש התשלום שאחרי (עד ה-15)
+  const payWindow = months.concat([addMonths(months[months.length - 1], 1)]);
+  const paidInPeriod = statePaidInMonths(p, months);
+  const paidWide = statePaidInMonths(p, payWindow);
+  let paidBl = paidInPeriod.bl, blSrc = "bank";
+  if (!(paidBl > 0) && (s.blMonthlyAdvance || 0) > 0) { paidBl = s.blMonthlyAdvance * months.length; blSrc = "settings"; }
+  const paidIt = paidWide.it;
+  const paid = paidBl + paidIt;
+  const gap = accrued - paid;                                    // חיובי = חסר, שלילי = עודף
+  const gapMonthly = gap / months.length;
+  const trigger = accrued > 0 && (Math.abs(gap) > accrued * 0.15 || Math.abs(gapMonthly) > 500);
+  const effRate = inferredMikdamaRate(p);                        // מההגדרות אם יש, אחרת מזוהה מהבנק
+  const expectedMikdama = effRate * netIncome;
+  return { months, hasData: true, netIncome, netDed, profit,
+           accruedIt, accruedBl, accrued, paidIt, paidBl, paid, blSrc,
+           gap, gapMonthly, level: !trigger ? "ok" : (gap > 0 ? "missing" : "over"),
+           expectedMikdama, rate: effRate, rateInferred: !(s.mikdamaRate > 0) && effRate > 0, freq: s.mikdamaFreq || "2m" };
+}
+
+/* ---------- זיהוי אוטומטי מהבנק (99.9% מהאנשים לא יודעים את האחוז שלהם — לא שואלים!) ----------
+   אחוז המקדמה: מהתשלום האחרון שזוהה בבנק חלקי המחזור של התקופה שלו.
+   מקדמת ב"ל: התשלום החודשי האחרון שזוהה. הגדרות ידניות (אם יש) גוברות. */
+function inferredMikdamaRate(p) {
+  const s = p.settings || {};
+  if ((s.mikdamaRate || 0) > 0) return s.mikdamaRate;
+  const tp = s.taxParams || DEFAULT_TAX_PARAMS;
+  const isVat = s.bizType === "morasheh" || s.bizType === "baam";
+  let months = lastClosedPeriod(p);
+  for (let k = 0; k < 3; k++) {   // עד 3 תקופות אחורה
+    const payMonth = addMonths(months[months.length - 1], 1);
+    const paidIt = statePaidInMonths(p, [payMonth]).it;
+    if (paidIt > 0) {
+      let gross = 0;
+      months.forEach(m => { try { gross += bizHomeSplit(p, m).biz.income; } catch (e) {} });
+      const net = gross / (isVat ? 1 + (tp.vatRate || 0.18) : 1);
+      if (net > 0) return Math.min(0.3, paidIt / net);
+    }
+    months = months.map(m => addMonths(m, -2));
+  }
+  return 0;
+}
+function inferredBlAdvance(p) {
+  const s = p.settings || {};
+  if ((s.blMonthlyAdvance || 0) > 0) return s.blMonthlyAdvance;
+  const tx = (p.transactions || []).filter(t => t.stateTax && t.amount < 0 &&
+    typeof stateTaxKind === "function" && stateTaxKind(t.desc) === "bl")
+    .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  return tx.length ? Math.abs(tx[tx.length - 1].amount) : 0;
+}
+
+/* לוח התשלומים הצפויים למדינה: ב"ל כל 15 לחודש; בחודש שאחרי סוף תקופת מע"מ —
+   מע"מ צפוי (עסקאות − תשומות, מהבנק) + מקדמת מ"ה (האחוז מזוהה מהבנק אוטומטית).
+   הערכה חיה שמתעדכנת עם כל תנועה. */
+function upcomingStatePayments(p, monthsAhead = 3) {
+  const s = p.settings || {}, tp = s.taxParams || DEFAULT_TAX_PARAMS;
+  const isVat = s.bizType === "morasheh" || s.bizType === "baam";
+  const isPatur = s.bizType === "patur";
+  const vr = tp.vatRate || 0.18;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const out = [];
+  for (let i = 0; i <= monthsAhead; i++) {
+    const m = addMonths(thisMonth(), i);
+    const [y, mo] = m.split("-").map(Number);
+    const date = new Date(y, mo - 1, 15);
+    if (date < today) continue;
+    const items = [];
+    const blAdv = inferredBlAdvance(p);
+    if (blAdv > 0)
+      items.push({ kind: "bl", label: "ביטוח לאומי (מקדמה)", amount: blAdv });
+    const prevM = addMonths(m, -1);
+    const per = vatPeriodOf(prevM);
+    const isAfterPeriod = per[1] === prevM;   // החודש שאחרי סוף תקופת מע"מ (מרץ, מאי, יולי...)
+    if (isVat && isAfterPeriod && !isPatur) {
+      let gross = 0, inVat = 0;
+      per.forEach(mm => {
+        try { gross += bizHomeSplit(p, mm).biz.income; } catch (e) {}
+        inVat += monthlyInputVat(p, mm);
+      });
+      if (gross > 0) items.push({ kind: "vat", label: `מע"מ ${hebMonth(per[0])}–${hebMonth(per[1])}`,
+        amount: Math.max(0, gross * vr / (1 + vr) - inVat), est: true });
+    }
+    const mkRate = isPatur ? 0 : inferredMikdamaRate(p);
+    if (mkRate > 0) {
+      const base = s.mikdamaFreq === "m" ? [prevM] : (isAfterPeriod ? per : null);
+      if (base) {
+        let g = 0;
+        base.forEach(mm => { try { g += bizHomeSplit(p, mm).biz.income; } catch (e) {} });
+        const net = g / (isVat ? 1 + vr : 1);
+        if (net > 0) items.push({ kind: "it", label: "מקדמת מס הכנסה", amount: mkRate * net, est: true });
+      }
+    }
+    if (items.length) out.push({ date, ym: m, day: 15, items,
+      total: items.reduce((a, b) => a + b.amount, 0) });
+  }
+  return out;
 }
 
 /* תובנות לתכנון מול ביצוע */

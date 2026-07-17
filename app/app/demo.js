@@ -13,6 +13,11 @@ function loadDemo() {
   p.settings.goalMonthlySavings = 4000;
   p.settings.openingBalance = 25000;
 
+  // תקציבי הדוגמה (ברירת המחדל הכללית היא 0 — בתיק דוגמה רוצים לראות את המערכת חיה)
+  const DEMO_BUDGETS = { "שכר דירה": 5200, "חשבונות": 900, "סופר וקניות לבית": 3200, "רכב": 800,
+    "דלק": 850, "בילויים ומסעדות": 900, "ביגוד ואופנה": 500, "הוצאות לעסק": 2500 };
+  p.categories.forEach(c => { if (DEMO_BUDGETS[c.name] != null) c.budget = DEMO_BUDGETS[c.name]; });
+
   p.clients = [
     { id: uid(), name: "דנה — ליווי עסקי",  monthlyFee: 4500, paymentsLeft: 9,  startMonth: "" },
     { id: uid(), name: "יוסי — אסטרטגיה",   monthlyFee: 5000, paymentsLeft: 4,  startMonth: "" },

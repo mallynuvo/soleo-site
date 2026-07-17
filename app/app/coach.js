@@ -13,15 +13,16 @@ function coachMessages(p) {
   const hour = new Date().getHours();
   const greet = hour < 12 ? "בוקר טוב" : hour < 18 ? "צהריים טובים" : "ערב טוב";
 
-  /* פתיח אישי */
+  /* פתיח אישי — שם רק אם זה באמת שם של בן אדם, לא שם תיק גנרי ("התיק שלי") */
   const leftover = act.income - act.expense;
   const rawName = (p.name || "").split(" ")[0] || "";
-  const firstName = (p.name === "התיק שלי" || !rawName) ? "" : rawName;
+  const firstName = /תיק|עסק|דמו|ראשי/.test(rawName) ? "" : rawName;
+  const hey = `${greet}${firstName ? ", " + firstName : ""}!`;
   if (act.income > 0 || act.expense > 0) {
     msgs.push({ tone: "info", icon: "sparkles",
-      text: `${greet}${firstName ? ", " + firstName : ""}! ${mw} נכנסו ${fmt(act.income)} ויצאו ${fmt(act.expense)}. ${leftover >= 0 ? `נשאר לך ${fmt(leftover)} — יפה!` : `${G("שימי","שים")} לב: ${fmt(-leftover)} במינוס ${mw}.`}` });
+      text: `${hey} ${mw} נכנסו ${fmt(act.income)} ויצאו ${fmt(act.expense)}. ${leftover >= 0 ? `נשאר לך ${fmt(leftover)} — יפה!` : `${G("שימי","שים")} לב: ${fmt(-leftover)} במינוס ${mw}.`}` });
   } else {
-    msgs.push({ tone: "info", icon: "sparkles", text: `${greet}${firstName ? ", " + firstName : ""}! בוא נראה איפה הכסף שלך עומד היום.` });
+    msgs.push({ tone: "info", icon: "sparkles", text: `${hey} ${G("בואי","בוא")} נראה איפה הכסף שלך עומד היום.` });
   }
 
   /* חריגות תקציב — בעדינות ובחיוב */
@@ -37,22 +38,25 @@ function coachMessages(p) {
   const near = budgets.filter(b => b.level === "orange" && b.cat.budget > 0);
   if (near.length && !over.length) {
     msgs.push({ tone: "warn", icon: "bell",
-      text: `את מתקרבת לסוף התקציב ב"${near[0].cat.name}" (${pct(near[0].used)}). נשאר ${fmt(near[0].remaining)} — את בשליטה.` });
+      text: `${G("את מתקרבת","אתה מתקרב")} לסוף התקציב ב"${near[0].cat.name}" (${pct(near[0].used)}). נשאר ${fmt(near[0].remaining)} — ${G("את","אתה")} בשליטה.` });
   }
 
-  /* כמה קטגוריות במסגרת — חיזוק חיובי */
+  /* כמה קטגוריות במסגרת — חיזוק חיובי. רק כשיש באמת הוצאות החודש — לא שבחים על אפס נתונים */
   const withBudget = budgets.filter(b => b.cat.budget > 0);
   const green = withBudget.filter(b => b.level === "green").length;
-  if (withBudget.length) {
+  if (withBudget.length && act.expense > 0) {
     msgs.push({ tone: "good", icon: "circle-check",
-      text: `את במסגרת ב-${green} מתוך ${withBudget.length} הקטגוריות החודש. ${green === withBudget.length ? "מושלם! חודש נקי לגמרי 🎉" : "כל הכבוד על השליטה."}` });
+      text: `${G("את","אתה")} במסגרת ב-${green} מתוך ${withBudget.length} הקטגוריות החודש. ${green === withBudget.length ? "מושלם! חודש נקי לגמרי 🎉" : "כל הכבוד על השליטה."}` });
   }
 
-  /* חוב — מסע לעבר נובמבר */
-  const debtCat = p.categories.find(c => c.name.includes("הלוואות") || c.name.includes("חוב"));
-  if (debtCat) {
-    msgs.push({ tone: "info", icon: "flag",
-      text: `כל תשלום מקרב אותך ליום שבו החוב נסגר — ואז הכסף הזה מתפנה לחיסכון ולהשקעה. ${G("תחזיקי","תחזק")} מעמד, זה קורה.` });
+  /* חוב — מסע לעבר היום שבו הוא נסגר. מחושב מההתחייבויות האמיתיות, לא מטקסט קבוע */
+  const loans = (p.commitments || []).filter(c => (c.paymentsLeft || 0) > 0 && /הלווא|חוב/.test(c.name || ""));
+  if (loans.length) {
+    const monthly = loans.reduce((s, c) => s + (c.monthly || 0), 0);
+    let lastEnd = null;
+    loans.forEach(c => { const e = addMonths(thisMonth(), Math.max(0, (c.paymentsLeft || 0) - 1)); if (!lastEnd || e > lastEnd) lastEnd = e; });
+    if (monthly > 0 && lastEnd) msgs.push({ tone: "info", icon: "flag",
+      text: `כל תשלום מקרב אותך ל${hebMonth(lastEnd)} — אז ${G("את חופשייה","אתה חופשי")} מהחוב, וה-${fmt(monthly)} האלה הופכים לחיסכון והשקעה. ${G("תחזיקי","תחזיק")} מעמד, ${G("את","אתה")} כבר בדרך.` });
   }
 
   /* חיסכון החודש מול היעד */
@@ -68,7 +72,7 @@ function coachMessages(p) {
   /* חלום החופש */
   if (fp) {
     msgs.push({ tone: "dream", icon: "star",
-      text: `זכרי לאן את הולכת: ${fmt(freedomNumber(fp))} = חופש כלכלי מלא. כל שקל שנשאר היום הוא לבנה בדרך לשם. 🌟` });
+      text: `${G("זכרי לאן את הולכת","זכור לאן אתה הולך")}: ${fmt(freedomNumber(fp))} = חופש כלכלי מלא. כל שקל שנשאר היום הוא לבנה בדרך לשם. 🌟` });
   }
 
   return msgs;

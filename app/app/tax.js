@@ -75,6 +75,8 @@ function grossForNet(targetNet, creditPoints, tp) {
 /* מסלול חברה בע"מ: רווח שנתי + כמה נטו צריך למחיה.
    שתי גרסאות: יתרת הרווח נשארת בחברה (retained) או מחולקת כדיבידנד (distributed) */
 function companyRoute(annualProfit, requiredNetAnnual, creditPoints, tp) {
+  annualProfit = Math.max(0, annualProfit);           // רווח שלילי → אין מס שלילי חסר-משמעות
+  requiredNetAnnual = Math.max(0, requiredNetAnnual);
   let gross = grossForNet(requiredNetAnnual, creditPoints, tp);
   let employerCost = gross * (1 + tp.employerBlRate);
   if (employerCost > annualProfit) {            // אין מספיק רווח — כל הרווח הולך לשכר

@@ -1,13 +1,13 @@
-/* advisor.js — יועץ פיננסי מובנה: עונה על שאלות מפתח עם הנתונים האמיתיים של מלי.
+/* advisor.js — יועץ פיננסי מובנה: עונה על שאלות מפתח עם הנתונים האמיתיים של המשתמש.
    זו הגרסה המקומית; בגרסה המסחרית יוחלף/יושלם בצ'אט AI חי (Claude). */
 "use strict";
 
 const ADVISOR_TOPICS = [
   { id: "status",  icon: "📊", q: "מה המצב הפיננסי שלי עכשיו?" },
-  { id: "save",    icon: "✂️", q: "איך אני יכולה לחסוך יותר?" },
-  { id: "earn",    icon: "📈", q: "איך אני יכולה להרוויח יותר?" },
+  { id: "save",    icon: "✂️", q: "איך אפשר לחסוך יותר?" },
+  { id: "earn",    icon: "📈", q: "איך אפשר להרוויח יותר?" },
   { id: "tax",     icon: "🧾", q: "איך לחסוך במס?" },
-  { id: "invest",  icon: "💰", q: "כמה אני יכולה להשקיע?" },
+  { id: "invest",  icon: "💰", q: "כמה אפשר להשקיע?" },
   { id: "freedom", icon: "🎯", q: "איך מתקדמים לחופש כלכלי?" }
 ];
 
@@ -22,12 +22,12 @@ function advisorAnswer(topic, p) {
     const cf = projectedCashflow(p, 34);
     return `<p>הנה תמונת המצב שלך:</p>
       <ul>
-        <li>💰 <b>יתרה בבנק:</b> ${fmt(bal)}</li>
+        ${bal ? `<li>💰 <b>יתרה בבנק:</b> ${fmt(bal)}</li>` : ""}
         <li>📥 נכנס החודש: ${fmt(act.income)} · 📤 יצא: ${fmt(act.expense)}</li>
-        <li>🔴 נקודה נמוכה צפויה: ${fmt(cf.low.bal)} (${cf.low.date.getDate()}/${cf.low.date.getMonth()+1})</li>
+        ${cf.events.length ? `<li>🔴 נקודה נמוכה צפויה: ${fmt(cf.low.bal)} (${cf.low.date.getDate()}/${cf.low.date.getMonth()+1})</li>` : ""}
         <li>💚 <b>באמת שלך (אחרי מע"מ+מס): ${fmt(cf.realYours)}</b></li>
       </ul>
-      <p>בשורה אחת: המיקוד: לייצב את ההכנסה, לשלוט בהוצאות, ולשים את הכסף למסים בצד — צעד אחר צעד.</p>`;
+      <p>בשורה אחת: המיקוד הוא לייצב את ההכנסה, לשים בצד למסים — ולתת לכל שקל שנשאר תפקיד.</p>`;
   }
 
   if (topic === "save") {
@@ -37,59 +37,66 @@ function advisorAnswer(topic, p) {
     const items = discretionary.map(b => `<li><b>${esc(b.cat.name)}</b>: ${fmt(b.spent)} החודש. הורדה של 25% = ~${fmt(b.spent*0.25*12)} בשנה.</li>`).join("");
     return `<p>הקיצוצים עם הכי הרבה פוטנציאל (לפי ההוצאות שלך):</p>
       <ul>${items || "<li>צריך עוד חודש נתונים כדי לזהות.</li>"}</ul>
-      <p><b>הטיפ הכי חשוב:</b> אל תקצצי בהכל — תבחרי 1-2 קטגוריות "פינוק" ותשימי להן גבול. וזכרי: חיסכון של 1,000 ₪/חודש = 12,000 בשנה שהולכים ישר לקרן החופש. 🌱</p>`;
+      <p><b>הטיפ הכי חשוב:</b> לא לקצץ בהכל — ${G("תבחרי","תבחר")} 1-2 קטגוריות "פינוק" ${G("ותשימי","ותשים")} להן גבול. חיסכון של 1,000 ₪/חודש = 12,000 בשנה שהולכים ישר ליעדים שלך. 🌱</p>`;
   }
 
   if (topic === "earn") {
     const goal = p.settings.goalMonthlyIncome || 0;
-    const gap = Math.max(0, goal - (be.neededIncomeMonthly ? act.income : act.income));
-    const avgFee = be.avgFee || 2624;
-    const need = avgFee > 0 ? Math.ceil((goal - act.income) / avgFee) : 0;
+    const avgFee = be.avgFee || p.settings.avgDealSize || 0;
+    const need = avgFee > 0 && goal > act.income ? Math.ceil((goal - act.income) / avgFee) : 0;
     return `<p>שלושה מנופים, מהחזק לחלש:</p>
       <ol>
-        <li>💎 <b>להעלות מחיר ללקוחות ב-10%</b> — כמעט הכל זורם לרווח. הכי קל, הכי משפיע.</li>
-        <li>👥 <b>לגייס לקוחות</b> — כדי להגיע ליעד (${fmt(goal)}) צריך עוד ~${need>0?need:0} לקוחות פעילים. חתימה של ~2-3 בחודש.</li>
-        <li>🚀 <b>מוצר מדרגי / האפליקציה</b> — הכנסה שלא תלויה בשעות שלך. זו הדרך להכנסה שלא תלויה בשעות שלך.</li>
+        <li>💎 <b>להעלות מחיר ב-10%</b> — כמעט הכל זורם לרווח. הכי קל, הכי משפיע.</li>
+        <li>👥 <b>להביא עוד לקוחות/עסקאות</b>${goal > 0 && need > 0 ? ` — כדי להגיע ליעד (${fmt(goal)}) צריך עוד ~${need} לקוחות/עסקאות בחודש` : ""}. מנוע הגיוס בטאב "לקוחות" מפרט בדיוק כמה.</li>
+        <li>🚀 <b>מוצר מדרגי</b> — קורס, תוכנית קבוצתית, מוצר דיגיטלי: הכנסה שלא תלויה בשעות שלך.</li>
       </ol>
-      <p>הליווי 1:1 מממן את החיים; המוצר המדרגי בונה את ההון.</p>`;
+      <p>העבודה השוטפת מממנת את החיים; המוצר המדרגי בונה את ההון.</p>`;
   }
 
   if (topic === "tax") {
+    let mr = 0.3; try { mr = marginalRateOf(p) + marginalBlRateOf(p); } catch (e) {}
+    const isVat = p.settings.bizType === "morasheh" || p.settings.bizType === "baam";
     return `<p>אלה מהלכי המס הכי משתלמים (לאישור רו"ח):</p>
       <ul>
         <li>💼 <b>קרן השתלמות</b> — להפקיד עד 20,566 ₪ השנה (הטבת המס על 13,203 הראשונים). חוסך אלפי ₪ מס + צומח פטור ממס.</li>
-        <li>🏠 <b>משרד ביתי</b> — חלק מהדירה והחשבונות מוכר. ~12,700 חיסכון מס/שנה.</li>
-        <li>🚗 <b>רכב עסקי</b> — החלק העסקי מוכר. ~5,700/שנה.</li>
-        <li>🧾 <b>החזר מע"מ</b> על כל קנייה עסקית (מקבוק, רדי אקשן, תוכנות).</li>
+        <li>🏠 <b>משרד ביתי</b> — אם ${G("את עובדת","אתה עובד")} מהבית, חלק מהשכירות והחשבונות מוכר.</li>
+        <li>🚗 <b>רכב</b> — החלק העסקי של הוצאות הרכב מוכר.</li>
+        ${isVat ? `<li>🧾 <b>קיזוז מע"מ</b> על כל קנייה עסקית מוכרת (ציוד, תוכנות, ספקים).</li>` : ""}
       </ul>
-      <p>המס השולי שלך ~45-50%, אז כל שקל הוצאה מוכרת חוסך כמעט חצי שקל. זה המנוף הכי גדול שלך.</p>`;
+      <p>מכל 100 ₪ נוספים שנכנסים, בערך ${Math.round(mr*100)} ₪ הולכים למס וביטוח לאומי — אז כל הוצאה מוכרת שווה כסף אמיתי. הפירוט במסך "תכנון מס".</p>`;
   }
 
   if (topic === "invest") {
-    const cf = projectedCashflow(p, 34);
+    const sv = savingsPlan(p);
+    const loans = (p.commitments || []).filter(c => (c.paymentsLeft || 0) > 0 && /הלווא|חוב/.test(c.name || ""));
+    const loanMonthly = loans.reduce((s, c) => s + (c.monthly || 0), 0);
     return `<p>כמה פנוי להשקעה:</p>
       <ul>
-        <li>היום (עם החזרי החוב): התזרים צפוף — מתמקדים בסגירת החוב.</li>
-        <li>💚 <b>כשהחוב נסגר</b> — כל הכסף שהתפנה הופך להשקעה חודשית קבועה.</li>
+        ${sv ? `<li>💚 לפי מה שבאמת נשאר לך — אפשר לשים בצד בערך <b>${fmt(sv.recommend)}</b> בחודש.</li>` : "<li>צריך עוד קצת נתונים (הכנסות והוצאות) כדי לחשב.</li>"}
+        ${loanMonthly > 0 ? `<li>כשהחוב ייסגר — ישתחררו עוד <b>${fmt(loanMonthly)}</b> בחודש להשקעה.</li>` : ""}
       </ul>
-      <p><b>סדר עדיפויות:</b> (1) קרן חירום 3 חודשים, (2) קרן השתלמות (פטורה ממס), (3) תיק מפוזר + הון הפתיחה 250K מההורים. כל אלה בונים את קרן החופש.</p>`;
+      <p><b>סדר עדיפויות:</b> (1) קרן ביטחון של 3 חודשי הוצאות, (2) קרן השתלמות (הטבת מס), (3) תיק השקעות מפוזר. כל אלה בונים את קרן החופש שלך.</p>`;
   }
 
   if (topic === "freedom") {
     const reach = fp ? freedomReachYear(fp) : null;
-    return `<p>היעד: <b>${fmt(freedomNumber(fp))}</b> = חופש כלכלי מלא.</p>
+    let needM = 0; try { needM = Math.round(requiredMonthlyForHorizon(fp, fp.horizonYears || 15)); } catch (e) {}
+    return `<p>היעד: <b>${fmt(freedomNumber(fp))}</b> = חופש כלכלי מלא (לפי תוכנית החופש שלך).</p>
       <p>הדרך לשם בשני מנועים:</p>
       <ol>
-        <li>💵 <b>קואצ'ינג</b> — להתייצב על ~21 לקוחות = 15K רווח/חודש. מממן חיים + השקעות + בניית האפליקציה.</li>
-        <li>📱 <b>אפליקציה</b> — הכנסה חוזרת שגדלה אינסופית → אקזיט. זו קפיצת המדרגה.</li>
+        <li>💵 <b>העסק</b> — להגדיל את הרווח החודשי ולהשקיע את העודף בעקביות${needM > 0 ? ` (בערך ${fmt(needM)} בחודש באופק של ${fp.horizonYears || 15} שנים)` : ""}.</li>
+        <li>🚀 <b>הכנסה מדרגית</b> — מוצר/שירות שלא תלוי בשעות שלך, שמאפשר לסכום החודשי לגדול משנה לשנה.</li>
       </ol>
-      <p>בקצב הנוכחי תגיעי בערך בשנת ${reach || "—"}. ככל שתגדילי השקעה חודשית והאפליקציה תצליח — זה מתקרב משמעותית. 🚀</p>`;
+      <p>${reach ? `בקצב שבתוכנית ${G("תגיעי","תגיע")} בערך בשנת ${reach}.` : ""} כל הגדלה של ההשקעה החודשית מקרבת את התאריך. 🚀</p>`;
   }
-  return "<p>בחרי שאלה למעלה.</p>";
+  return `<p>${G("בחרי","בחר")} שאלה למעלה.</p>`;
 }
 
 /* ===================== היועץ החכם (AI חי דרך Claude) ===================== */
 const AI_URL = "http://127.0.0.1:8765";
+
+/* האם זו ההתקנה המקומית (עם חיבור בנק וקבצי command) או גרסת לקוח */
+function advisorLocalSetup() { return !!(window.BANK_DATA && window.BANK_DATA.generatedAt); }
 let advisorChat = [];          // [{role:'user'|'assistant', content}]
 let advisorBusy = false;
 let advisorServerUp = null;    // null=לא נבדק, true, false
@@ -127,7 +134,13 @@ function buildAdvisorContext(p) {
 
   const fp = p.freedomPlan;
   if (fp) { ctx.יעד_חופש_כלכלי = g(() => Math.round(freedomNumber(fp))); ctx.שנת_הגעה_צפויה = g(() => freedomReachYear(fp)); }
-  ctx.הערה_חוב = "";
+  // הערת חוב — מחושבת מההתחייבויות האמיתיות, לא טקסט קבוע
+  const loans = (p.commitments || []).filter(c => (c.paymentsLeft || 0) > 0 && /הלווא|חוב/.test(c.name || ""));
+  const loanMonthly = loans.reduce((s, c) => s + (c.monthly || 0), 0);
+  if (loanMonthly > 0) {
+    const maxLeft = Math.max(...loans.map(c => c.paymentsLeft || 0));
+    ctx.הערה_חוב = g(() => `החזרי הלוואות ~${Math.round(loanMonthly)}/חודש נסגרים ב-${hebMonth(addMonths(thisMonth(), Math.max(0, maxLeft - 1)))}`);
+  }
   return ctx;
 }
 
@@ -158,8 +171,11 @@ async function sendAdvisorMessage(text) {
       : `<p style="color:var(--red)">שגיאה: ${esc(data.error || "לא ידועה")}</p>` });
   } catch {
     advisorServerUp = false;
+    // הוראות ההפעלה המקומיות (קבצי command) — רק בהתקנה של מלי; לקוחות מקבלים הסבר כללי
     advisorChat.push({ role: "assistant",
-      content: `<p>היועץ החכם לא פעיל כרגע.</p><p>כדי להפעיל אותו: דאבל-קליק על <b>"הפעל יועץ AI.command"</b> (פעם ראשונה — קודם <b>"הגדרת מפתח AI.command"</b>), ואז נסי שוב. בינתיים אפשר להשתמש בשאלות המהירות למטה. 💚</p>` });
+      content: advisorLocalSetup()
+        ? `<p>היועץ החכם לא פעיל כרגע.</p><p>כדי להפעיל אותו: דאבל-קליק על <b>"הפעל יועץ AI.command"</b> (פעם ראשונה — קודם <b>"הגדרת מפתח AI.command"</b>), ואז ${G("נסי","נסה")} שוב. בינתיים אפשר להשתמש בשאלות המהירות למטה. 💚</p>`
+        : `<p>הצ'אט החכם יגיע בקרוב! 💚 בינתיים השאלות המהירות למטה עונות עם הנתונים האמיתיים שלך.</p>` });
   }
   advisorBusy = false;
   render();
