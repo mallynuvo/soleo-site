@@ -377,18 +377,6 @@ header{position:sticky;top:0;z-index:50;background:rgba(253,247,235,.85);backdro
   </div>
 </section>
 
-<!-- ===== מי מאחורי ===== -->
-<section class="about">
-  <div class="wrap" style="max-width:780px">
-    <h2>מי מאחורי Soleo? 💛</h2>
-    <div class="card" style="text-align:right;padding:34px 30px">
-      <p style="margin-bottom:14px"><strong>אני מלי שכטר</strong> — יועצת עסקית שמלווה עצמאים ובעלי עסקים ביום-יום: אסטרטגיה, שיווק, וכן — כסף.</p>
-      <p style="margin-bottom:14px">ובסוף, כמעט אצל כולם, פגשתי את אותו רגע: הכסף נכנס, העסק עובד — ואין באמת מושג כמה ממנו שלך. עד שמגיע תשלום למע"מ או לביטוח לאומי, ומרגישים את הבטן מתהפכת. זה לא סיפור של עצלנות. זה סיפור של כלים שלא דיברו את השפה שלנו.</p>
-      <p style="margin-bottom:0">אז בניתי את Soleo — קודם כל על העסק של עצמי. כל חישוב בה נבדק מול המספרים האמיתיים שלי ומול הרו"ח שלי, שקל מול שקל. עכשיו היא כאן בשבילך.</p>
-    </div>
-  </div>
-</section>
-
 <!-- ===== שאלות נפוצות ===== -->
 <section class="faq">
   <div class="wrap">
@@ -480,7 +468,7 @@ header{position:sticky;top:0;z-index:50;background:rgba(253,247,235,.85);backdro
 
 <script>
 // ==========================================================
-// טופס הצטרפות — כל הרשמה נשלחת למייל של מלי (FormSubmit, בלי שרת)
+// טופס הצטרפות — כל הרשמה נשלחת למייל הצוות (FormSubmit, בלי שרת)
 // + גיבוי מקומי ב-localStorage. חיוב אמיתי יחובר עם Grow.
 // ==========================================================
 (function () {
@@ -527,7 +515,7 @@ header{position:sticky;top:0;z-index:50;background:rgba(253,247,235,.85);backdro
       // localStorage חסום (מצב פרטי וכו') — עדיין מציגים תודה
     }
 
-    // שליחת ההרשמה למייל של מלי — Web3Forms ראשי, FormSubmit גיבוי. אף לקוחה לא הולכת לאיבוד.
+    // שליחת ההרשמה למייל הצוות — Web3Forms ראשי, FormSubmit גיבוי. אף לקוחה לא הולכת לאיבוד.
     try {
       fetch('https://api.web3forms.com/submit', {
         method: 'POST',
@@ -545,7 +533,7 @@ header{position:sticky;top:0;z-index:50;background:rgba(253,247,235,.85);backdro
       }).then(function (r) { if (!r.ok) throw new Error('w3f'); })
       .catch(function () {
         // גיבוי: FormSubmit
-        fetch('https://formsubmit.co/ajax/msmallyschecter@gmail.com', {
+        fetch('https://formsubmit.co/ajax/6bde85239470d83755b1ab63f394b2fa', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
           body: JSON.stringify({
