@@ -95,6 +95,15 @@ function advisorAnswer(topic, p) {
 /* ===================== היועץ החכם (AI חי דרך Claude) ===================== */
 const AI_URL = "http://127.0.0.1:8765";
 
+/* דגל בילד: הגשר המקומי (127.0.0.1:8765) קיים רק בהתקנה המקומית.
+   בגרסה הציבורית build_public_app.py הופך את הדגל ל-false — אפס פניות רשת לגשר,
+   אפס סטטוס "פעיל" מזויף, והיועצת החכמה מוצגת בכנות כ"בקרוב". */
+const ADVISOR_BRIDGE_ENABLED = false;   // גרסה ציבורית: אין גשר מקומי — מצב "בקרוב" תמיד
+
+/* ההודעה החמה כשהיועצת החכמה לא זמינה בגרסת לקוח */
+const ADVISOR_SOON_HTML = `<p><b>היועצת החכמה מגיעה בקרוב 💛</b></p>
+<p>בינתיים השאלות המהירות למטה עונות כבר עכשיו — עם הנתונים האמיתיים שלך. ויש שאלה שחשוב לך לשאול עוד היום? אפשר לכתוב לנו: <b>hello@soleoapp.com</b></p>`;
+
 /* האם זו ההתקנה המקומית (עם חיבור בנק וקבצי command) או גרסת לקוח */
 function advisorLocalSetup() { return !!(window.BANK_DATA && window.BANK_DATA.generatedAt); }
 let advisorChat = [];          // [{role:'user'|'assistant', content}]
@@ -145,6 +154,13 @@ function buildAdvisorContext(p) {
 }
 
 async function pingAdvisorServer() {
+  // גרסה ציבורית: אין גשר בכלל — בלי בדיקת רשת, בלי "פעיל" מזויף; מצב "בקרוב" חם וכן
+  if (!ADVISOR_BRIDGE_ENABLED) {
+    advisorServerUp = false;
+    if (!advisorChat.length) advisorChat.push({ role: "assistant", content: ADVISOR_SOON_HTML });
+    if (typeof render === "function") render();
+    return;
+  }
   try {
     const r = await fetch(AI_URL + "/health", { signal: AbortSignal.timeout(2500) });
     advisorServerUp = r.ok;
@@ -156,13 +172,25 @@ async function sendAdvisorMessage(text) {
   text = (text || "").trim();
   if (!text || advisorBusy) return;
   advisorChat.push({ role: "user", content: text });
+  if (!ADVISOR_BRIDGE_ENABLED) {
+    advisorServerUp = false;
+    advisorChat.push({ role: "assistant", content: ADVISOR_SOON_HTML });
+    render();
+    return;
+  }
   advisorBusy = true;
   render();
   try {
     const r = await fetch(AI_URL + "/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: advisorChat, context: buildAdvisorContext(P()) }),
+      body: JSON.stringify({
+        messages: advisorChat,
+        context: buildAdvisorContext(P()),
+        // שם ולשון הפנייה של בעל/ת התיק — כדי שהיועצת תפנה לאדם הנכון, לא לשם קבוע
+        ownerName: (typeof ownerName === "function" ? ownerName() : "") || "",
+        gender: (P().settings || {}).gender || ""
+      }),
       signal: AbortSignal.timeout(60000)
     });
     const data = await r.json();
@@ -175,7 +203,7 @@ async function sendAdvisorMessage(text) {
     advisorChat.push({ role: "assistant",
       content: advisorLocalSetup()
         ? `<p>היועץ החכם לא פעיל כרגע.</p><p>כדי להפעיל אותו: דאבל-קליק על <b>"הפעל יועץ AI.command"</b> (פעם ראשונה — קודם <b>"הגדרת מפתח AI.command"</b>), ואז ${G("נסי","נסה")} שוב. בינתיים אפשר להשתמש בשאלות המהירות למטה. 💚</p>`
-        : `<p>הצ'אט החכם יגיע בקרוב! 💚 בינתיים השאלות המהירות למטה עונות עם הנתונים האמיתיים שלך.</p>` });
+        : ADVISOR_SOON_HTML });
   }
   advisorBusy = false;
   render();
@@ -194,7 +222,8 @@ function advisorClearChat() { advisorChat = []; render(); }
 function advisorQuick(topicId) {
   const t = ADVISOR_TOPICS.find(x => x.id === topicId);
   if (!t) return;
-  if (advisorServerUp) { sendAdvisorMessage(t.q); return; }
+  // רק true אמיתי — לא "checking"; ובגרסה ציבורית לעולם לא פונים לגשר
+  if (ADVISOR_BRIDGE_ENABLED && advisorServerUp === true) { sendAdvisorMessage(t.q); return; }
   advisorChat.push({ role: "user", content: t.q });
   advisorChat.push({ role: "assistant", content: advisorAnswer(topicId, P()) });
   render();

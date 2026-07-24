@@ -45,11 +45,26 @@ function requiredMonthlyForHorizon(fp, years) {
 const FORECAST_MONTHS = 12;
 
 /* ---------- הכנסה חודשית מלקוח ---------- */
-function clientIncomeInMonth(client, ymStr, baseMonth) {
+/* דמי הלקוח לחישובי רווח/מס: לקוח שסומן vatInclusive=true — המחיר כולל מע"מ,
+   מפרידים אותו (חלוקה ב-1.18) לפני כל חישוב רווח/מס — בדיוק כמו בהכנסות הקבועות (recurring).
+   ברירת מחדל (undefined) = המחיר נחשב לפני מע"מ — התנהגות קיימת, אף תיק לא משתנה.
+   TODO (גל ה-UI): שאלה במסך הלקוחות/שאלון — "המחיר שהלקוח משלם כולל מע"מ?" */
+function clientFeeNet(client, p) {
+  const fee = client.monthlyFee || 0;
+  if (client.vatInclusive !== true) return fee;
+  const s = (p && p.settings) || {};
+  const isVatBiz = s.bizType === "morasheh" || s.bizType === "baam";
+  if (!isVatBiz) return fee;   // עוסק פטור — אין מע"מ להפריד
+  const vr = (s.taxParams && s.taxParams.vatRate) || 0.18;
+  return fee / (1 + vr);
+}
+function clientIncomeInMonth(client, ymStr, baseMonth, p) {
   const start = client.startMonth && client.startMonth > baseMonth ? client.startMonth : baseMonth;
   if (ymStr < start) return 0;
   const idx = monthDiff(start, ymStr);
-  return idx < (client.paymentsLeft || 0) ? (client.monthlyFee || 0) : 0;
+  if (idx >= (client.paymentsLeft || 0)) return 0;
+  // עם פרופיל — נטו ממע"מ כשצריך; בלעדיו — המחיר כפי שהוזן (תאימות לאחור)
+  return p ? clientFeeNet(client, p) : (client.monthlyFee || 0);
 }
 function monthDiff(a, b) {
   const [ay, am] = a.split("-").map(Number), [by, bm] = b.split("-").map(Number);
@@ -81,7 +96,7 @@ function buildForecast(p, mults) {
 
   const rows = months.map(ymStr => {
     let clientIncome = 0;
-    for (const c of p.clients) clientIncome += clientIncomeInMonth(c, ymStr, base);
+    for (const c of p.clients) clientIncome += clientIncomeInMonth(c, ymStr, base, p);
     clientIncome *= m.clientsMult * m.priceMult;
 
     let extra = 0;
@@ -495,6 +510,32 @@ function investmentStats(inv) {
 }
 
 /* ---------- מנגנון הפרשות למדינה (מע"מ + מס הכנסה + ביטוח לאומי) ---------- */
+/* יחס המע"מ שנשאר לשלם אחרי קיזוז תשומות צפוי (מחליף את ה-0.9 השרירותי, 22.7.2026).
+   אותו מקור אמת כמו מסך הבית: monthlyInputVat (פר-תנועה, רק עם מסמך מס תקף — vatDoc),
+   בממוצע עד 3 החודשים הסגורים האחרונים שיש בהם הכנסה עסקית.
+   אין היסטוריה → 1: מפרישים מע"מ מלא. שמרני ואמיתי — לא ממציאים יחס קיזוז. */
+function expectedVatOffsetRatio(p) {
+  const s = p.settings || {}, tp = s.taxParams || DEFAULT_TAX_PARAMS;
+  if (!(s.bizType === "morasheh" || s.bizType === "baam")) return 1;
+  const vr = tp.vatRate || 0.18;
+  const cur = thisMonth();
+  const incByMonth = {};
+  for (const t of (p.transactions || [])) {
+    const m = (t.date || "").slice(0, 7);
+    if (!m || m >= cur || t.transfer) continue;   // רק חודשים סגורים
+    if (t.amount > 0 && !t.categoryId && !isRefundTx(t) && !isInstitutionIncome(t))
+      incByMonth[m] = (incByMonth[m] || 0) + t.amount;
+  }
+  const keys = Object.keys(incByMonth).filter(m => incByMonth[m] > 0).sort().slice(-3);
+  if (!keys.length) return 1;   // אין נתונים — בלי הפחתה
+  let outVat = 0, inVat = 0;
+  for (const m of keys) {
+    outVat += incByMonth[m] * vr / (1 + vr);      // מע"מ עסקאות מההכנסה בפועל
+    inVat += monthlyInputVat(p, m);               // מע"מ תשומות אמיתי (מכבד vatDoc)
+  }
+  if (!(outVat > 0)) return 1;
+  return Math.min(1, Math.max(0, 1 - inVat / outVat));
+}
 // מקבל הכנסה (כולל מע"מ אם vatInclusive) ומפצל: כמה למדינה וכמה באמת שלך
 function stateReservation(grossIncome, p, vatInclusive = true) {
   const tp = p.settings.taxParams;
@@ -505,7 +546,7 @@ function stateReservation(grossIncome, p, vatInclusive = true) {
   // עוסק פטור לא גובה ולא מפריש מע"מ — אפס מע"מ בכל מסך
   const isVatBiz = p.settings.bizType === "morasheh" || p.settings.bizType === "baam";
   const exVat = (vatInclusive && isVatBiz) ? grossIncome / (1 + tp.vatRate) : grossIncome;
-  const vat = isVatBiz ? Math.max(0, (grossIncome - exVat) * 0.9) : 0;     // פחות ~מע"מ תשומות
+  const vat = isVatBiz ? Math.max(0, (grossIncome - exVat) * expectedVatOffsetRatio(p)) : 0;   // פחות מע"מ תשומות צפוי (מההיסטוריה האמיתית)
   const profit = Math.max(0, exVat - bizMonthly);
   const incomeTax = profit * taxRate;
   const ni = profit * niRate;
@@ -587,7 +628,7 @@ function forwardPlan(p) {
   // שיעור מס אפקטיבי משוער על הרווח העסקי השנתי הצפוי
   let annualBizIncome = 0, annualBizComm = 0;
   for (const ym of months) {
-    for (const cl of p.clients) annualBizIncome += clientIncomeInMonth(cl, ym, base);
+    for (const cl of p.clients) annualBizIncome += clientIncomeInMonth(cl, ym, base, p);
     for (const c of commitments) if (c.tag === "biz") annualBizComm += commitmentInMonth(c, ym, base);
   }
   const annualProfit = Math.max(0, annualBizIncome - annualBizComm);
@@ -595,7 +636,7 @@ function forwardPlan(p) {
 
   const rows = months.map(ym => {
     let income = 0;
-    for (const cl of p.clients) income += clientIncomeInMonth(cl, ym, base);
+    for (const cl of p.clients) income += clientIncomeInMonth(cl, ym, base, p);
     const active = commitments.map(c => ({ name: c.name, tag: c.tag, amt: commitmentInMonth(c, ym, base) })).filter(c => c.amt > 0);
     const bizComm = active.filter(c => c.tag === "biz").reduce((s, c) => s + c.amt, 0);
     const persComm = active.filter(c => c.tag === "personal").reduce((s, c) => s + c.amt, 0);
@@ -854,35 +895,70 @@ function productEconomics(p) {
   });
 }
 
+/* ---------- מסמך מס לקיזוז תשומות (vatDoc, מפרט 22.7.2026) ----------
+   קיזוז מע"מ תשומות מותר רק עם חשבונית מס ישראלית תקפה. חיוב חו"ל (מנויים כמו
+   ANTHROPIC/APPLE) בדרך כלל בלי חשבונית כזו — אז לא מנכים ומדליקים 🔍 לבדיקה מול הרו"ח.
+   ברירת מחדל בחוסר מידע: לא מנכים — לעולם לא ממציאים מע"מ מהסכום.
+   ההפרדה מלאה: ההוצאה נשארת מוכרת במלואה למס הכנסה גם כשאין קיזוז מע"מ. */
+const FOREIGN_VENDOR_RE = /anthropic|apple\.com\/bill|google|meta\b|openai|canva|zoom/i;
+function isForeignTx(t) {
+  const d = (t && t.desc || "").trim();
+  if (FOREIGN_VENDOR_RE.test(d)) return true;
+  // מוסכמת Max: חיוב חו"ל מסתיים בקוד מדינה (US, IE...) — שתי אותיות גדולות שאינן IL
+  const m = d.match(/\s([A-Z]{2})$/);
+  return !!(m && m[1] !== "IL" && CREDIT_ACCOUNT_RE.test((t && t.account) || ""));
+}
+/* הסטטוס האפקטיבי של תנועה: yes=מנכים תשומות, no=לא, unknown=חו"ל בלי מסמך → לא מנכים + 🔍.
+   סימון ידני של המשתמשת (t.vatDoc) גובר על הזיהוי האוטומטי. */
+function txVatDoc(t, cat) {
+  if (t && (t.vatDoc === "yes" || t.vatDoc === "no")) return t.vatDoc;
+  if (!cat || cat.tag !== "biz" || !cat.deductible || cat.vatDeductible === false) return "no";
+  return isForeignTx(t) ? "unknown" : "yes";
+}
+/* 🔍 התנועות שממתינות לבדיקת מסמך מס (unknown) בחודשים נתונים — לדוח לרו"ח */
+function vatDocReview(p, months) {
+  const catById = {}; (p.categories || []).forEach(c => { catById[c.id] = c; });
+  const list = [];
+  for (const t of (p.transactions || [])) {
+    if (!t.date || !months.includes(t.date.slice(0, 7)) || t.transfer || !(t.amount < 0) || !t.categoryId) continue;
+    if (txVatDoc(t, catById[t.categoryId]) === "unknown") list.push(t);
+  }
+  return list.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+}
+/* חיובי חו"ל שסומנו ידנית "יש מסמך מס תקף" — כדי לאפשר ביטול הסימון */
+function vatDocMarkedYes(p, months) {
+  const catById = {}; (p.categories || []).forEach(c => { catById[c.id] = c; });
+  return (p.transactions || []).filter(t => t.vatDoc === "yes" && t.date &&
+    months.includes(t.date.slice(0, 7)) && !t.transfer && t.amount < 0 && t.categoryId &&
+    isForeignTx(t) && catById[t.categoryId] && catById[t.categoryId].tag === "biz");
+}
+
 /* ---------- מע"מ תשומות + "כמה חסכת החודש" (התובנה של הרו"ח של מלי, 16.7) ----------
    מע"מ לתשלום אמיתי = מע"מ עסקאות פחות מע"מ תשומות (הוצאות מוכרות-מע"מ).
-   בלי הקיזוז האפליקציה מפחידה ב-אלפי שקלים מיותרים. */
+   בלי הקיזוז האפליקציה מפחידה ב-אלפי שקלים מיותרים.
+   מ-22.7: פר-תנועה, רק עם מסמך מס תקף (txVatDoc === "yes"). */
 function monthlyInputVat(p, ymStr) {
   if (!(p.settings.bizType === "morasheh" || p.settings.bizType === "baam")) return 0;
-  const act = actualsForMonth(p, ymStr);
   const tp = p.settings.taxParams || DEFAULT_TAX_PARAMS;
   const vr = tp.vatRate || 0.18;
+  const catById = {}; (p.categories || []).forEach(c => { catById[c.id] = c; });
   let vatSpend = 0;
-  for (const c of (p.categories || []))
-    if (c.tag === "biz" && c.deductible && c.vatDeductible) vatSpend += (act.byCat[c.id] || 0);
-  return vatSpend * vr / (1 + vr);
+  for (const t of (p.transactions || [])) {
+    if (!t.date || t.date.slice(0, 7) !== ymStr || t.transfer || !t.categoryId) continue;
+    if (txVatDoc(t, catById[t.categoryId]) !== "yes") continue;
+    vatSpend += -t.amount;   // הוצאה מוסיפה, החזר/זיכוי באותה קטגוריה מקזז (כמו actualsForMonth)
+  }
+  return Math.max(0, vatSpend) * vr / (1 + vr);
 }
 
 /* כמה כסף ההוצאות המוכרות חסכו החודש: מע"מ שקוזז + מס הכנסה וב"ל שירדו */
 function monthlySavings(p, ymStr) {
   const act = actualsForMonth(p, ymStr);
-  const tp = p.settings.taxParams || DEFAULT_TAX_PARAMS;
-  const vr = tp.vatRate || 0.18;
-  const isVat = p.settings.bizType === "morasheh" || p.settings.bizType === "baam";
-  let dedSpend = 0, vatSpend = 0;
+  let dedSpend = 0;
   for (const c of (p.categories || [])) {
-    if (c.tag === "biz" && c.deductible) {
-      const s = act.byCat[c.id] || 0;
-      dedSpend += s;
-      if (c.vatDeductible) vatSpend += s;
-    }
+    if (c.tag === "biz" && c.deductible) dedSpend += (act.byCat[c.id] || 0);   // מוכר למס הכנסה — במלואו, גם בלי מסמך מע"מ
   }
-  const vatBack = isVat ? vatSpend * vr / (1 + vr) : 0;
+  const vatBack = monthlyInputVat(p, ymStr);   // רק תנועות עם מסמך מס תקף (txVatDoc === "yes"); 0 לעוסק פטור
   const netDed = dedSpend - vatBack;
   const mr = marginalRateOf(p);
   const itBack = netDed * mr;

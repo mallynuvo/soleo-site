@@ -7,6 +7,9 @@ let viewMonth = thisMonth();
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+/* ברכה אישית בכל האפליקציה: "שלום, {שם} 🍋" — ואם אין שם, פשוט "שלום 🍋" */
+function hello() { const n = ownerName(); return "שלום" + (n ? ", " + esc(n) : "") + " 🍋"; }
+
 /* ========== רינדור ראשי ========== */
 function render() {
   save();
@@ -20,6 +23,11 @@ function render() {
                 moneydate: renderMoneyDate, grow: renderGrow, impulse: renderImpulse,
                 onboarding: renderOnboarding, goals: renderGoals, pipeline: renderPipeline, actions: renderActions };
   if (P().onboarding && !P().onboarding.done && (P().transactions || []).length === 0 && (P().clients || []).length === 0 && activeTab !== "onboarding") activeTab = "onboarding";
+  if (obAfterSignup !== null && activeTab !== "onboarding") activeTab = "onboarding";   // יצירת החשבון (שלב 13) — חובה, אין עקיפה דרך הטאבים
+  // שאלון הכניסה במסך נקי (סקירת מוכנות 22.7): מסתירים את הכותרת והטאבים עד שנכנסים לאפליקציה.
+  // כניסה חוזרת לטאב ההתאמה אחרי שכבר הוגדר (done, לפני מסכי הבנק/חשבון) — עם הכרום הרגיל.
+  document.body.classList.toggle("onboarding-mode",
+    activeTab === "onboarding" && (!P().onboarding.done || obStep >= 12 || obAfterSignup !== null));
   document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
   $("tab-" + activeTab).classList.add("active");
   document.querySelectorAll("#tabs button").forEach(b =>
@@ -40,19 +48,50 @@ function bizTypeName(t) {
 }
 
 /* ========== התראות ========== */
+/* שם ידידותי לחשבון מקור-הסנכרון (המפתחות שהסקריפט כותב ל-BANK_DATA.sources) */
+const SOURCE_NAMES = { leumi: "לאומי", max: "Max", visaCal: "כאל", isracard: "ישראכרט", hapoalim: "הפועלים", discount: "דיסקונט", mizrahi: "מזרחי" };
 function renderAlerts() {
   const p = P(), tp = p.settings.taxParams;
   const alerts = [];
 
+  // ⚠️ כשל שמירה (סקירת מוכנות 22.7): הדגל נדלק ב-state.js כשהכתיבה למכשיר נכשלת — תמיד ראשון, לא נחתך
+  const saveFailBanner = window.SAVE_FAILED
+    ? `<div class="alert red">⚠️ השמירה נכשלה — הנתונים לא נשמרים למכשיר. ${G("גבי","גבה")} את הנתונים עכשיו: כפתור "גיבוי ⬇" למעלה.</div>`
+    : "";
+
+  // 👀 מסתכלים על תיק הדוגמה — תזכורת ברורה + חזרה בלחיצה אחת (התיק האישי שמור, כלום לא נמחק)
+  const demoBanner = (DB.active === "demo" && Object.keys(DB.profiles).length > 1)
+    ? `<div class="alert orange" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"><span>👀 זה <b>תיק הדוגמה</b> — מספרים להתרשמות, לא הנתונים שלך. הנתונים שלך שמורים ובטוחים.</span><button class="small" onclick="backFromDemo()">← חזרה לתיק שלי</button></div>`
+    : "";
+
+  // 🔌 טריות הסנכרון פר-מקור (חוזה עם sync_bank.mjs): מקור שלא התעדכן מעל 3 ימים — באנר רך.
+  // אם BANK_DATA.sources לא קיים (גרסה ישנה של הסנכרון / אין חיבור) — פשוט לא מציגים כלום.
+  const srcs = (DB.active === "main" && window.BANK_DATA && window.BANK_DATA.sources) || null;
+  if (srcs) for (const [key, info] of Object.entries(srcs)) {
+    const ls = info && info.lastSuccess ? Date.parse(info.lastSuccess) : NaN;
+    if (!isFinite(ls)) continue;
+    if ((Date.now() - ls) / 864e5 > 3) {
+      const d = new Date(ls);
+      alerts.push({ level: "orange", text: `החשבון ${SOURCE_NAMES[key] || key} לא התעדכן מ-${d.getDate()}.${d.getMonth() + 1} — כדאי לבדוק את החיבור לבנק` });
+    }
+  }
+
   const unclassified = p.transactions.filter(t => !t.categoryId && t.amount < 0).length;
-  if (unclassified) alerts.push({ level: "info", text: `יש ${unclassified} תנועות שמחכות לסיווג — במסך "תזרים שוטף"` });
+  if (unclassified) alerts.push({ level: "info", text: `יש ${unclassified} תנועות שמחכות לסיווג — במסך "תזרים"` });
 
   for (const b of budgetStatus(p, thisMonth())) {
     if (!b.cat.budget) continue;
+    // חודש קיבוץ: תקציב שנקבע/שונה החודש הזה (למשל בשאלון, ואז נרשמה הוצאה תואמת בהזנה המהירה) —
+    // לא נוזפים עליו עד שעובר חודש קלנדרי אחד ורואים דפוס אמיתי, לא ניחוש ראשוני שהתאמת בול (QA 23.7)
+    if (b.cat.budgetSetMonth === thisMonth()) continue;
     if (b.level === "red")
       alerts.push({ level: "red", text: `חריגה בתקציב "${b.cat.name}": ${fmt(b.spent)} מתוך ${fmt(b.cat.budget)} (${pct(b.used)}) — חריגה של ${fmt(-b.remaining)}` });
-    else if (b.level === "orange")
-      alerts.push({ level: "orange", text: `${G("מתקרבת","מתקרב")} לסוף התקציב ב"${b.cat.name}": ${pct(b.used)} נוצלו, נשארו ${fmt(b.remaining)}` });
+    else if (b.level === "orange") {
+      const atLimit = b.remaining <= 0;   // "מתקרבת" שגוי כשכבר הגיעו בדיוק ל-100% — 0 נשאר זה לא "מתקרבת", זה הגיעו
+      alerts.push({ level: "orange", text: atLimit
+        ? `הגעת בדיוק לתקציב שקבעת ב"${b.cat.name}" — ${fmt(b.spent)} מתוך ${fmt(b.cat.budget)}. עוד קצת ותהיה חריגה.`
+        : `${G("מתקרבת","מתקרב")} לסוף התקציב ב"${b.cat.name}": ${pct(b.used)} נוצלו, נשארו ${fmt(b.remaining)}` });
+    }
   }
 
   if (p.settings.bizType === "patur") {
@@ -66,7 +105,7 @@ function renderAlerts() {
     const fc = buildForecast(p);
     const sp = companySwitchPoint(fc.annual.personalExpense, p.settings.creditPoints, tp);
     if (sp && fc.annual.profit >= sp * 0.85)
-      alerts.push({ level: "info", text: `${G("את מתקרבת","אתה מתקרב")} לרמת הרווח שבה כדאי לשקול מעבר לבע"מ (בערך ${fmt(sp)} בשנה) — פירוט במסך "תחזית ומס"` });
+      alerts.push({ level: "info", text: `${G("את מתקרבת","אתה מתקרב")} לרמת הרווח שבה כדאי לשקול מעבר לבע"מ (בערך ${fmt(sp)} בשנה) — פירוט במסך "תחזית שנתית"` });
   }
 
   if (p.lastBackup) {
@@ -76,7 +115,7 @@ function renderAlerts() {
     alerts.push({ level: "info", text: `💾 טיפ קטן: לחיצה על "גיבוי ⬇" למעלה שומרת עותק ביטחון של כל הנתונים שלך בקובץ. שווה פעם בחודש.` });
   }
 
-  $("alertsBar").innerHTML = alerts.slice(0, 5)
+  $("alertsBar").innerHTML = demoBanner + saveFailBanner + alerts.slice(0, 5)
     .map(a => `<div class="alert ${a.level}">${a.level === "red" ? "🔴" : a.level === "orange" ? "🟠" : "💡"} ${esc(a.text)}</div>`).join("");
 }
 
@@ -108,10 +147,8 @@ function renderAdvisor() {
       <div style="max-width:85%;background:#faf8f4;border:1px solid var(--line);padding:10px 14px;border-radius:14px 14px 4px 14px;font-size:14.5px;line-height:1.7">${m.content}</div>
     </div>`;
   }).join("") : (function(){
-    const rawName = (P().name || "").split(" ")[0] || "";
-    const nm = /תיק|עסק|דמו|ראשי/.test(rawName) ? "" : rawName;
     return `<div class="muted" style="text-align:center;padding:24px 8px;font-size:14px">
-      שלום${nm ? " " + esc(nm) : ""} 💚 אני המאמנת הפיננסית שלך. ${G("שאלי","שאל")} אותי כל שאלה על הכסף שלך — תקציב, מס, חיסכון, גיוס לקוחות, הדרך לחופש הכלכלי — ואני אענה לפי הנתונים האמיתיים שלך.
+      ${hello()} 💚 אני המאמנת הפיננסית שלך. ${G("שאלי","שאל")} אותי כל שאלה על הכסף שלך — תקציב, מס, חיסכון, גיוס לקוחות, הדרך לחופש הכלכלי — ואני אענה לפי הנתונים האמיתיים שלך.
     </div>`; })();
 
   const typing = advisorBusy ? `<div style="display:flex;gap:9px;align-items:center;margin:10px 0">
@@ -194,16 +231,131 @@ const COACH_TONES = {
 };
 let profScope = "year";
 function toggleProfScope() { profScope = profScope === "year" ? "month" : "year"; render(); }
+/* יעד חופש שהוגדר במודע (סקירת מוכנות 22.7): ברירת המחדל הגנרית (480 אלף לשנה → "12 מיליון")
+   היא לא חלום של אף אחד — לא מציגים אותה כאילו המשתמשת בחרה בה. "הוגדר" = נענה בשאלון,
+   נערך בתוכנית החופש (userSet), או שהערך שונה מברירת המחדל (תיקים ותיקים כמו של מלי). */
+function freedomGoalSet(p) {
+  const fp = p.freedomPlan;
+  if (!fp || !(fp.annualSpendTarget > 0)) return false;
+  if (fp.userSet) return true;
+  const a = (p.onboarding && p.onboarding.answers) || {};
+  if (a.freedomMonthly > 0) return true;
+  return fp.annualSpendTarget !== 480000;
+}
+/* 🔁 לולאת הרגל יומית — "מאז הביקור האחרון שלך" (24.7.2026, מחליף את גרסת "אתמול" בלוח שנה).
+   אמת אמיתית: prevVisitAt נקבע פעם אחת בעליית האפליקציה (state.js), לא פרוקסי מומצא.
+   אין ביקור קודם (משתמשת חדשה) → אין שורה בכלל (Unknown כן, לא ממציאים "אתמול" שלא היה).
+   לתנועות בבנק יש רק תאריך (בלי שעה) — משווים לפי היום של הביקור הקודם, כדי לא לספור פעמיים
+   תנועה מאותו יום שכבר נראתה בביקור ההוא. */
+function sinceLastVisitLine(p) {
+  if (typeof prevVisitAt === "undefined" || !prevVisitAt) return "";
+  const prevDay = prevVisitAt.slice(0, 10);
+  const tx = (p.transactions || []).filter(t => t.date && t.date > prevDay);
+  if (!tx.length) return "";
+  const inc = tx.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  const exp = tx.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const parts = [];
+  if (inc > 0) parts.push(`נכנסו ${fmt(inc)}`);
+  if (exp > 0) parts.push(`יצאו ${fmt(exp)}`);
+  if (!parts.length) return "";
+  return `<div style="margin-top:9px;padding-top:9px;border-top:1px dashed #E6D48A;font-size:13px;color:#7a5c12;cursor:pointer" onclick="activeTab='cashflow';render()">
+    🔄 מאז הביקור האחרון שלך (${humanizeVisitTime(prevVisitAt)}) ${parts.join(" · ")} — ${G("בואי תראי","בוא תראה")} מה זה ←
+  </div>`;
+}
+/* ניסוח חם לזמן הביקור הקודם: "היום ב-14:30" / "אתמול ב-14:30" / "לפני יומיים" / "לפני 5 ימים" / תאריך מלא */
+function humanizeVisitTime(iso) {
+  const d = new Date(iso), now = new Date();
+  const startOfDay = dt => new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 864e5);
+  const hhmm = d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+  if (diffDays <= 0) return `היום ב-${hhmm}`;
+  if (diffDays === 1) return `אתמול ב-${hhmm}`;
+  if (diffDays === 2) return `לפני יומיים`;
+  if (diffDays < 7) return `לפני ${diffDays} ימים`;
+  return d.toLocaleDateString("he-IL", { day: "numeric", month: "numeric" });
+}
+
+/* ========== 🎯 מנוע דירוג — "הדבר האחד שכדאי לעשות עכשיו" (24.7.2026) ==========
+   לא ממציא סוגי המלצה חדשים: אוסף אך ורק את הפריטים הקיימים מ-actionCenter (calc.js) —
+   קרן השתלמות/הוצאות מוכרות, "שלם לעצמך", מחיר רצפה, חריגת תקציב, תנועות לא מסווגות, דייט חודשי.
+   מדרג ביניהם בניקוד שקוף משלושה גורמים שכולם נגזרים מנתונים קיימים על כל פריט:
+   • השפעה כספית — ה-₪ הגדול ביותר שכבר מופיע בתיאור/בצעדים של הפריט (כבר חושב ע"י calc.js)
+   • דחיפות — ה-priority שאותו actionCenter כבר קבע לכל סוג פריט (1=הכי דחוף/חשוב)
+   • פשטות — כמה שלבים נדרשים כדי לבצע (0-1 שלבים = ניתן לעשות מיד)
+   ניקוד = 50% השפעה + 30% דחיפות + 20% פשטות. הסיבה המוצגת נגזרת מהגורם שתרם הכי הרבה בפועל. */
+function actionImpact(a) {
+  const text = (a.detail || "") + " " + (a.steps || []).join(" ");
+  const nums = (text.match(/₪[\d,]+/g) || []).map(s => Number(s.replace(/[₪,]/g, "")));
+  return nums.length ? Math.max(...nums) : 0;
+}
+const ACTION_REASONS = {
+  "impact,urgency": "כי זה יכול לחזור לך הכי הרבה, והכי דחוף לטפל בו",
+  "impact,simplicity": "כי זה יכול לחזור לך הכי הרבה, הכי מהר",
+  "urgency,impact": "כי זה הכי דחוף לטפל בו — וגם יכול לחזור לך כסף משמעותי",
+  "urgency,simplicity": "כי זה הכי דחוף לטפל בו, וגם הכי קל להזיז עכשיו",
+  "simplicity,impact": "כי זה הכי קל להזיז עכשיו — וגם יכול לחזור לך כסף",
+  "simplicity,urgency": "כי זה הכי קל להזיז עכשיו, וגם דחוף"
+};
+function rankActions(p) {
+  const acts = (typeof actionCenter === "function") ? actionCenter(p) : [];
+  if (!acts.length) return { all: [], top: null, rest: [] };
+  const maxImpact = Math.max(1, ...acts.map(actionImpact));
+  const scored = acts.map(a => {
+    const impact = actionImpact(a);
+    const impactScore = impact / maxImpact;
+    const urgencyScore = 1 - (a.priority - 1) / 2;                 // priority 1→1, 2→0.5, 3→0
+    const simplicityScore = a.steps.length ? 1 / (1 + a.steps.length) : 1;
+    const contribs = [
+      { key: "impact", val: impactScore * 0.5 },
+      { key: "urgency", val: urgencyScore * 0.3 },
+      { key: "simplicity", val: simplicityScore * 0.2 }
+    ].sort((x, y) => y.val - x.val);
+    const score = contribs.reduce((s, c) => s + c.val, 0);
+    const reason = ACTION_REASONS[contribs[0].key + "," + contribs[1].key] || "כי זה הכי משתלם לעשות עכשיו, לפי כל מה שיודעים עליך";
+    return Object.assign({}, a, { score, impact, reason });
+  });
+  scored.sort((x, y) => y.score - x.score);
+  return { all: scored, top: scored[0], rest: scored.slice(1) };
+}
+
+/* ========== 🔍 המשפט הראשון: מה המספר הזה אומר עלייך — לפני שממליצים על פעולה ==========
+   אותו stateMoneyPlan/actualsForMonth שמזינים את מסך הבית (מקור אחד לאמת) — קובעים איזה גורם
+   באמת מקטין את מה שנשאר: המדינה (מע"מ+מס+ב"ל) או ההוצאות בפועל. לא ניסוח גנרי — תלוי במספרים. */
+function diagnosisLine(p) {
+  const sp = (typeof stateMoneyPlan === "function") ? stateMoneyPlan(p) : null;
+  if (!sp || !(sp.monthlyIncome > 0)) return "";
+  const M = activeMonth(p);
+  const mw = monthWord(p);
+  const expense = actualsForMonth(p, M).expense;
+  const stateAmt = Math.round(sp.perMonth);
+  const expAmt = Math.round(expense);
+  if (stateAmt <= 0 && expAmt <= 0) return "";
+  const stateShare = stateAmt / sp.monthlyIncome;
+  const expShare = expAmt / sp.monthlyIncome;
+  let text;
+  if (expAmt <= 0 || (stateAmt > 0 && Math.abs(stateShare - expShare) < 0.05)) {
+    text = stateAmt > 0
+      ? `מ-${fmt(sp.monthlyIncome)} שנכנסו ${mw}, ${fmt(stateAmt)} כבר הולכים למדינה (מע"מ, מס הכנסה וביטוח לאומי)${expAmt > 0 ? ` ועוד ${fmt(expAmt)} יצאו בהוצאות` : ""} — זו הסיבה שנשאר פחות ממה שחשבת.`
+      : `מ-${fmt(sp.monthlyIncome)} שנכנסו ${mw}, ${fmt(expAmt)} יצאו בהוצאות — זה מה שמקטין את מה שנשאר לך.`;
+  } else if (stateShare > expShare) {
+    text = `מ-${fmt(sp.monthlyIncome)} שנכנסו ${mw}, ${fmt(stateAmt)} כבר הולכים למדינה (מע"מ, מס הכנסה וביטוח לאומי) — זו הסיבה שנשאר פחות ממה שחשבת, יותר מההוצאות עצמן.`;
+  } else {
+    text = `מ-${fmt(sp.monthlyIncome)} שנכנסו ${mw}, ${fmt(expAmt)} יצאו בהוצאות — זה הגורם העיקרי שמקטין את מה שנשאר לך, יותר מהמסים.`;
+  }
+  return `<div style="margin-top:8px">🔍 ${text} <span class="small" style="opacity:.7">(הערכה — לא תחליף לרו"ח)</span></div>`;
+}
+
 function renderHome() {
   const p = P();
   const M = activeMonth(p);
   const mw = monthWord(p);
-  const actCount = (typeof actionCenter === "function") ? actionCenter(p).length : 0;
+  const rankedActs = rankActions(p);
   const act = actualsForMonth(p, M);
   const leftover = act.income - act.expense;
   const homeState = stateMoneyPlan(p);
   const score = monthScore(p);
-  const msgs = coachMessages(p);
+  // מסננים הודעות "חלום" כשיעד החופש לא הוגדר במודע — לא מצטטים 12 מיליון שאף אחד לא בחר (סקירת מוכנות 22.7)
+  const msgs = coachMessages(p).filter(m => m.tone !== "dream" || freedomGoalSet(p));
   const fp = p.freedomPlan;
   const reach = fp ? freedomReachYear(fp) : null;
 
@@ -220,23 +372,40 @@ function renderHome() {
   const align = goalAlignment(p, M);
 
   $("tab-home").innerHTML = `
-  ${p.transactions.length===0 && p.clients.length===0 ? `<div class="panel" style="border:2px solid var(--accent)">
+  ${valueCardHTML(p, "home")}
+  ${!valueMoment(p) && qaMsg ? `<div class="panel" style="padding:12px 16px">${qaMsgHTML()}</div>` : ""}
+  ${p.transactions.length===0 && p.clients.length===0 && !valueMoment(p) ? `<div class="panel" style="border:2px solid var(--accent)">
     <div style="display:flex;align-items:center;gap:12px">
       <div style="flex:1">
-        <h2 style="margin:0 0 6px">🍋 ברוכים הבאים! 3 צעדים קטנים ומתחילים</h2>
-        <div style="font-size:14px;line-height:2">
-          <b>1.</b> ההכנסות שלך — מי משלם לך וכמה: <button class="small ghost" onclick="activeTab='income';render()">👥 לקוחות והכנסות ←</button><br>
-          <b>2.</b> ההוצאות — אפשר להזין ידנית או לחבר את הבנק: <button class="small ghost" onclick="activeTab='cashflow';render()">💳 תזרים ←</button><br>
-          <b>3.</b> וזהו — מכאן אנחנו עושים את השאר: מסים, תקציבים, ומה לעשות. 😎
+        <h2 style="margin:0 0 6px">🍋 ברוכים הבאים! מתחילים בצעד אחד קטן</h2>
+        <p class="desc" style="margin:0 0 10px">${G("הזיני","הזן")} את 3 ההוצאות הגדולות שלך — 30 שניות, ומיד רואים תמונה ראשונה: כמה יוצא, ומה מזה מוכר במס.</p>
+        ${qaOpen ? quickAddHTML(p) : `<div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button onclick="qaStart()">✏️ מתחילים — 3 ההוצאות הגדולות</button>
+          <button class="ghost small" onclick="peekDemo()">👀 לראות איך זה נראה מלא? ${G("הציצי","הצץ")} בדוגמה</button>
         </div>
+        ${!(p.onboarding && p.onboarding.answers && p.onboarding.answers.monthlyIncome > 0) ? `<div class="small muted" style="margin-top:8px">ורוצה שאתפור הכל בדיוק ${G("עלייך","עליך")}? <button class="ghost small" onclick="obStep=0;activeTab='onboarding';render()">🍋 לשאלון ההתאמה (2 דק')</button></div>` : ""}`}
       </div>
       ${lemonArt("suitcase", 84)}
     </div>
   </div>` : ""}
 
+  ${rankedActs.top ? `<div class="panel" style="background:#FFD600;border:none;cursor:pointer" onclick="activeTab='actions';render()">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="font-size:26px">${rankedActs.top.icon}</div>
+      <div style="flex:1">
+        <div style="font-size:11px;font-weight:800;color:#6d5c00;letter-spacing:.02em">🎯 הדבר האחד שכדאי לעשות עכשיו</div>
+        <div style="font-weight:800;font-size:15.5px;color:#1C1C1C;margin-top:2px">${esc(rankedActs.top.title)}</div>
+        <div style="font-size:13px;color:#6d5c00;margin-top:2px">${esc(rankedActs.top.reason)}${rankedActs.rest.length?` · ועוד ${rankedActs.rest.length} דברים שכדאי לעשות`:""}</div>
+      </div>
+      <div style="font-size:20px;color:#6d5c00;flex-shrink:0">←</div>
+    </div>
+  </div>` : ""}
+
   <div class="panel" style="background:#FFF6D9;border:none">
+    <div style="font-size:19px;font-weight:800;margin-bottom:6px">${hello()}</div>
     <div style="font-size:12.5px;color:#8a7a2e;margin-bottom:3px">✨ המשפט שלך להיום</div>
     <div style="font-size:16px;line-height:1.55;font-weight:500">${esc(dailyMessage())}</div>
+    ${sinceLastVisitLine(p)}
   </div>
 
   <div class="panel" style="background:#fff;border:1.5px solid #EFE3CC">
@@ -244,20 +413,10 @@ function renderHome() {
       <img src="mascot.jpeg" alt="" style="width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0">
       <div style="flex:1">
         <div style="font-size:13px;color:#5C6E33;font-weight:700">${main ? "Soleo 🍋" : ""}</div>
-        <div style="font-size:15.5px;line-height:1.5;font-weight:500">${main ? esc(main.text) : "ברוכים הבאים ל-Soleo! 🍋"}</div>
+        <div style="font-size:15.5px;line-height:1.5;font-weight:500">${main ? esc(main.text) : hello() + " ברוכים הבאים ל-Soleo!"}</div>
       </div>
     </div>
   </div>
-
-  ${actCount>0 ? `<div class="panel" style="background:#FFD600;border:none;cursor:pointer" onclick="activeTab='actions';render()">
-    <div style="display:flex;align-items:center;gap:12px">
-      <div style="font-size:26px">✅</div>
-      <div style="flex:1">
-        <div style="font-weight:800;font-size:15.5px;color:#1C1C1C">יש לך ${actCount} דברים שכדאי לעשות</div>
-        <div style="font-size:13px;color:#6d5c00">אני אומר לך בדיוק מה — צעד אחר צעד. ${G("לחצי","לחץ")} לראות ←</div>
-      </div>
-    </div>
-  </div>` : ""}
 
   ${p.lastMoneyDate!==thisMonth() ? `<div class="panel" style="background:#DFE5D3;border:none;cursor:pointer" onclick="activeTab='moneydate';render()">
     <div style="display:flex;align-items:center;gap:12px">
@@ -285,7 +444,7 @@ function renderHome() {
     const pts = vals.map((v, i) => `${X(i)},${Y(v)}`).join(" ");
     const prev = hist[4] ? hist[4].net : 0;
     const deltaPct = prev !== 0 ? Math.round((leftover - prev) / Math.abs(prev) * 100) : null;
-    return `<div style="display:grid;grid-template-columns:minmax(230px,1.7fr) minmax(170px,1fr);gap:12px;margin-bottom:14px">
+    return `<div class="homeGrid">
       <div class="panel" style="margin:0;position:relative;overflow:hidden;background:#fff">
         <div style="font-size:12.5px;color:var(--muted)">נשאר ביד ${mw} (נכנס פחות יצא)</div>
         <div style="font-size:34px;font-weight:800;letter-spacing:-.01em;margin:2px 0">${fmt(leftover)}</div>
@@ -336,7 +495,7 @@ function renderHome() {
       <h2 style="margin:0 0 4px">🏢 העסק מול 🏠 הבית — ${mw}</h2>
       <p class="desc" style="margin:0 0 10px">שני הצדדים של הכסף שלך, אחד ליד השני. לחיצה על צד = כל הפירוט.
         <span class="muted">מאיפה המספרים? הוצאות העסק = כל מה שסווג החודש לקטגוריות 🏢 עסקיות (בתזרים); הוצאות הבית = הקטגוריות האישיות; המסים מחושבים מההכנסה העסקית שנכנסה בפועל.</span></p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="grid2">
         <div style="background:#F3F6EA;border:1.5px solid #DFE5D3;border-radius:14px;padding:13px 15px;cursor:pointer" onclick="txFilter='biz';activeTab='cashflow';render()">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
             <b style="font-size:15px;color:#47541F">🏢 העסק</b><span style="font-size:12px;color:#5C6E33;font-weight:700">לפירוט ←</span></div>
@@ -435,9 +594,14 @@ function renderHome() {
     </div>` : ""}
     <div class="panel" style="flex:1">
       <h2>🌟 חלום החופש</h2>
+      ${freedomGoalSet(p) ? `
       <div style="font-size:22px;font-weight:700;color:var(--brand)">${fp?fmt(freedomNumber(fp)):"—"}</div>
       <div class="small muted">${reach?`לפי ההנחות בתוכנית החופש — ${G("תגיעי","תגיע")} בשנת ${reach}`:""}</div>
-      <button class="small ghost" style="margin-top:8px" onclick="activeTab='freedom';render()">לתוכנית המלאה ←</button>
+      <button class="small ghost" style="margin-top:8px" onclick="activeTab='freedom';render()">לתוכנית המלאה ←</button>`
+      : `
+      <div style="font-size:14.5px;line-height:1.6">עוד לא הגדרת את יעד החופש — אפשר בהגדרות 💛</div>
+      <div class="small muted" style="margin-top:4px">כמה בחודש היה עושה לך חיים טובים בלי לעבוד? מזה נגזר המספר הגדול.</div>
+      <button class="small ghost" style="margin-top:8px" onclick="activeTab='freedom';render()">להגדיר את היעד ←</button>`}
     </div>
   </div>
 
@@ -493,6 +657,7 @@ function renderHome() {
       <span class="muted">=</span>
       <div style="text-align:center"><div class="muted small">💚 נשאר לך ${lbl}</div><div style="font-weight:800;color:var(--green)">${fmt(v.netKept)}</div></div>
     </div>
+    ${p.settings.bizType === "morasheh" || p.settings.bizType === "baam" ? `<div class="small muted" style="margin:-4px 0 10px">"נכנס" = לפני מע"מ — ההכנסה שהצהרת פחות המע"מ שמועבר למדינה.</div>` : ""}
     <div style="background:var(--brand-soft);border-radius:12px;padding:13px 15px">
       <div style="font-size:15px;color:#47541F">מתוך כל <b>100 ₪</b> שנכנסו — נשאר לך <span style="font-size:24px;font-weight:800">₪${pr.per100}</span></div>
       <div class="small" style="color:#47541F;margin-top:5px">המטרה שלנו: להגדיל את המספר הזה. קודם נבין ביחד מה מקטין אותו — כל שקל שנחזיר הוא עוד כסף בכיס שלך. 💪</div>
@@ -553,8 +718,8 @@ function renderHome() {
       <button class="small" style="background:var(--brand);color:#fff;border:none" onclick="activeTab='moneydate';render()">📅 הדייט החודשי שלי</button>
       <button class="ghost small" onclick="activeTab='grow';render()">📈 לגדול</button>
       <button class="ghost small" onclick="activeTab='impulse';render()">🛑 לפני שקונים</button>
-      <button class="ghost small" onclick="activeTab='cashflow';render()">💳 התנועות שלי</button>
-      <button class="ghost small" onclick="activeTab='forecast';render()">📈 תחזית ומס</button>
+      <button class="ghost small" onclick="activeTab='cashflow';render()">💳 תזרים</button>
+      <button class="ghost small" onclick="activeTab='forecast';render()">🔭 תחזית שנתית</button>
     </div>
   </div>`;
 }
@@ -726,7 +891,7 @@ function renderGrow() {
     ${fp.underpriced
       ? `<div class="alert orange">⚠️ ${G("את מתמחרת","אתה מתמחר")} נמוך בערך <b>${fmt(Math.round(fp.gap))}</b> ללקוח (${pct(fp.gapPct)}). העלאה קטנה כאן = רווח ישיר לכיס, בלי להביא אף לקוח נוסף.</div>`
       : `<div class="alert green">✅ הממוצע שלך מעל מחיר הרצפה — ${G("את מתמחרת","אתה מתמחר")} נכון. יפה!</div>`}
-    <div class="small muted" style="margin-top:6px">מבוסס על ${fp.active} לקוחות פעילים והעלויות שהגדרת. חישוב הערכה.</div>
+    <div class="small muted" style="margin-top:6px">איך חישבנו את הרצפה? כל מה שצריך להיכנס בחודש כדי לכסות הכל — חיי הבית, הוצאות העסק, המס והחיסכון שלך (${fmt(Math.round(fp.neededMonthly))}) — חלקי ${fp.active} הלקוחות הפעילים = ${fmt(Math.round(fp.floorPerClient))}. חישוב הערכה.</div>
   </div>` : ""}
 
   <div class="panel" style="border-right:4px solid var(--red)">
@@ -867,24 +1032,296 @@ function openSupport() {
   window.location.href = "mailto:" + SUPPORT_EMAIL + "?subject=" + subject + "&body=" + body;
 }
 
+/* ========== 💛 "הרגע שלך" — כרטיס הערך הראשון + הזנה מהירה של 3 הוצאות ==========
+   מוצג מיד אחרי השאלון וגם במסך הבית, כל עוד אין הכנסה אמיתית (בנק/ידני).
+   עקרון DoT (מקור חישוב אחד): אותם stateMoneyPlan/incomeAside שמזינים את מסך הבית —
+   אפס מתמטיקת-מס חדשה. כל מספר מסומן "הערכה לפי השאלון" + "איך חישבנו" נפתח. */
+function valueMoment(p) {
+  const a = (p.onboarding && p.onboarding.answers) || {};
+  if (!(a.monthlyIncome > 0)) return null;                 // אין הכנסה מהשאלון — לא ממציאים מספר (Unknown כן)
+  const sp = (typeof stateMoneyPlan === "function") ? stateMoneyPlan(p) : null;
+  if (!sp || sp.src !== "recurring") return null;          // ברגע שנכנסה הכנסה אמיתית — הבמה עוברת למספרים מהבנק
+  return { a, sp, eff: selfTaxEffectiveRate(p) };
+}
+function valueCardHTML(p, ctx) {
+  const vm = valueMoment(p);
+  if (!vm) return "";
+  const a = vm.a, sp = vm.sp, eff = vm.eff;
+  const s = p.settings || {};
+  const isVat = s.bizType === "morasheh" || s.bizType === "baam";
+  const nm = ownerName();
+  const spent = actualsForMonth(p, thisMonth()).expense;   // הוצאות שכבר נרשמו החודש (למשל בהזנה המהירה)
+  const step = (emoji, lbl, val, sub) => `<div style="flex:1;min-width:116px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;text-align:center">
+      <div class="small muted">${emoji} ${lbl}</div><div style="font-size:19px;font-weight:800">${val}</div>${sub ? `<div class="small muted">${sub}</div>` : ""}</div>`;
+  const arrow = `<div style="font-size:17px;color:var(--muted);align-self:center">←</div>`;
+  return `<div class="panel" style="border:2px solid var(--accent);background:#FFFDF4">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <h2 style="margin:0;flex:1">💛 הרגע שלך${nm ? ", " + esc(nm) : ""} — מה הכסף שלך כבר מספר</h2>
+      <span style="background:#FFF1C4;border:1px solid #F0D98A;color:#7a5c12;border-radius:999px;padding:4px 11px;font-size:12px;font-weight:800">הערכה לפי השאלון 🍋</span>
+    </div>
+    <p class="desc" style="margin:6px 0 12px">לפי מה שסיפרת — עוד לפני שהקלדת תנועה אחת. כשהבנק יתחבר, הכל יתעדכן למספרים האמיתיים.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${step("📥", "נכנסים בערך", fmt(sp.monthlyIncome), "בחודש")}
+      ${arrow}
+      ${isVat ? step("🏛️", "בצד למע\"מ", fmt(Math.round(sp.vat)), "עובר דרכך למדינה")
+              : step("🏛️", "מע\"מ", "₪0", G("עוסקת פטורה — בלי מע\"מ 🙂", "עוסק פטור — בלי מע\"מ 🙂"))}
+      ${arrow}
+      ${step("🧾", "למס הכנסה + ביטוח לאומי", fmt(Math.round(sp.tax + sp.ni)), "לשים בצד")}
+      ${arrow}
+      ${step("💚", "באמת שלך", `<span style="color:var(--green)">${fmt(Math.round(sp.yours))}</span>`, "לפני ההוצאות")}
+    </div>
+    ${spent > 0 ? `<div style="background:var(--brand-soft);border-radius:11px;padding:10px 13px;margin-top:10px;font-size:13.5px;color:#47541F">📉 ואחרי ${fmt(spent)} ההוצאות שכבר רשמת החודש — נשארים בערך <b>${fmt(Math.round(sp.yours - spent))}</b>.</div>` : ""}
+    <details style="margin-top:10px">
+      <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--muted)">🔍 איך חישבנו?</summary>
+      <div class="small" style="line-height:1.9;color:#555;margin-top:6px">
+        ${a.clientsCount > 0 && a.avgPerClient > 0
+          ? `• ההכנסה: ${a.clientsCount} לקוחות × ${fmt(a.avgPerClient)} = <b>${fmt(sp.monthlyIncome)}</b> בחודש — מה שסיפרת בשאלון.<br>`
+          : `• ההכנסה: <b>${fmt(sp.monthlyIncome)}</b> בחודש — כפי שציינת בשאלון.<br>`}
+        ${isVat
+          ? `• מע"מ (${pct((s.taxParams || {}).vatRate || 0.18)}): חלק מכל תשלום שנכנס הוא מע"מ שנגבה בשביל המדינה — בערך <b>${fmt(Math.round(sp.vat))}</b> בחודש. הוא לא באמת שלך, ולכן שמים אותו בצד.${a.pricesVat === "no" ? ` (ציינת שהמחירים לפני מע"מ — בינתיים חישבנו בזהירות כאילו הם כוללים מע"מ; חיבור הבנק ידייק את זה.)` : ""}<br>`
+          : `• מע"מ: ${G("עוסקת פטורה לא גובה", "עוסק פטור לא גובה")} מע"מ — אז כאן זה פשוט ₪0. 🙂<br>`}
+        • מס הכנסה + ביטוח לאומי: ${eff.est
+          ? `הפרשה זהירה של <b>${pct((s.taxReserveRate || 0.19) + (s.niReserveRate || 0.11))}</b> מההכנסה אחרי מע"מ (${pct(s.taxReserveRate || 0.19)} מס הכנסה + ${pct(s.niReserveRate || 0.11)} ביטוח לאומי) — ברירת מחדל זהירה, עד שנלמד את המספרים האמיתיים שלך מהבנק`
+          : `לפי מדרגות המס האמיתיות, מההכנסות האחרונות שנכנסו`} = <b>${fmt(Math.round(sp.tax + sp.ni))}</b> בחודש.<br>
+        • כל זה <b>הערכה</b> — לא תחליף לרואה חשבון. ברגע שהבנק מחובר, המספרים מתעדכנים למציאות.
+      </div>
+    </details>
+    ${qaMsgHTML(ctx === "ob")}
+    ${qaOpen ? quickAddHTML(p) : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button onclick="qaStart()">✏️ רוצה שזה יהיה מדויק? ${G("הזיני", "הזן")} את 3 ההוצאות הגדולות שלך — 30 שניות</button>
+      ${ctx === "home" ? `<button class="ghost small" onclick="peekDemo()">👀 לראות איך זה נראה מלא? ${G("הציצי", "הצץ")} בדוגמה</button>` : ""}
+    </div>`}
+  </div>`;
+}
+/* --- הזנה מהירה: 3 ההוצאות הגדולות — צ'יפים מהקטגוריות שנבחרו בשאלון, אפס הקלדה --- */
+let qaOpen = false, qaSel = [], qaMsg = null;
+function qaStart() { qaOpen = true; qaSel = []; qaMsg = null; render(); }
+function qaCancel() { qaOpen = false; render(); }
+/* קודם הקטגוריות שבחרה בשאלון (קיבלו תקציב), אחר כך השאר — בלי קטגוריית תשלומי המדינה */
+function qaCats(p) {
+  const cats = (p.categories || []).filter(c => c.name !== STATE_TAX_CAT);
+  return cats.filter(c => c.budget > 0).concat(cats.filter(c => !(c.budget > 0))).slice(0, 12);
+}
+function qaTap(catId) {
+  const c = P().categories.find(x => x.id === catId); if (!c) return;
+  const i = qaSel.findIndex(x => x.catId === catId);
+  if (i >= 0) qaSel.splice(i, 1); else qaSel.push({ catId, name: c.name, amount: 0 });
+  render();
+}
+function qaAmt(i, v) { if (qaSel[i]) qaSel[i].amount = Number(v) || 0; }   // בלי render — לא מאבדים פוקוס בהקלדה
+function qaSave() {
+  const p = P();
+  const rows = qaSel.filter(r => r.amount > 0);
+  if (!rows.length) { qaOpen = false; render(); return; }
+  const today = new Date().toISOString().slice(0, 10);
+  let total = 0, ded = 0;
+  for (const r of rows) {
+    p.transactions.push({ id: uid(), date: today, desc: r.name, amount: -Math.abs(r.amount), categoryId: r.catId, source: "manual", account: "" });
+    total += r.amount;
+    const c = p.categories.find(c => c.id === r.catId);
+    if (c && c.tag === "biz" && c.deductible) ded += r.amount;
+  }
+  viewMonth = thisMonth();   // שהתנועות החדשות ייראו מיד בתזרים
+  const sv = (typeof monthlySavings === "function") ? monthlySavings(p, thisMonth()) : null;
+  qaMsg = { n: rows.length, total, ded, back: (ded > 0 && sv && sv.total > 0) ? sv.total : 0 };
+  qaOpen = false; qaSel = [];
+  save(); render();
+}
+/* אחרי הזנה מהירה (24.7.2026): קודם מבינים מה המספר אומר (diagnosisLine — הגורם הדומיננטי האמיתי
+   שלה, לא ניסוח גנרי), ורק אז — "אז מה עושים עם זה?" — הפעולה האחת המדורגת הכי גבוה (rankActions).
+   noNav=true (הקשר שאלון ההתאמה) — הצעד הבא כבר קבוע שם ("מחברים בנק"), אז לא כופלים ניווט/אבחון. */
+function qaMsgHTML(noNav) {
+  if (!qaMsg) return "";
+  const p = P();
+  const rk = (typeof rankActions === "function") ? rankActions(p) : { top: null };
+  const top = rk.top;
+  return `<div style="background:#E7F6EC;border-radius:11px;padding:11px 13px;margin-top:10px;font-size:13.5px;line-height:1.8;color:#2e5d3a">
+    ✔️ נרשמו ${qaMsg.n === 1 ? "הוצאה אחת" : qaMsg.n + " הוצאות"} — ${fmt(qaMsg.total)} בחודש. הן כבר בתזרים ובתקציבים שלך.
+    ${qaMsg.back > 0 ? `<br>💚 ${fmt(qaMsg.ded)} מהן בקטגוריות עסקיות מוכרות — לפי ההערכה הן מחזירות לך בערך <b>${fmt(Math.round(qaMsg.back))}</b> החודש (קיזוז מע"מ ופחות מס). הערכה — לא תחליף לרו"ח.` : ""}
+    ${noNav ? "" : `<button class="ghost small" style="margin-top:6px" onclick="activeTab='cashflow';qaMsg=null;render()">לראות אותן בתזרים ←</button>`}
+    ${!noNav ? diagnosisLine(p) : ""}
+    ${!noNav && top ? `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #b7d9c2">
+      <div class="small" style="font-weight:800;color:#1C1C1C;margin-bottom:6px">👉 אז מה עושים עם זה?</div>
+      <div style="display:flex;align-items:flex-start;gap:8px">
+        <span style="font-size:20px">${top.icon}</span>
+        <div style="flex:1">
+          <div style="font-weight:800;font-size:13.5px;color:#1C1C1C">🎯 הדבר האחד שכדאי לעשות עכשיו: ${esc(top.title)}</div>
+          <div class="small" style="color:#2e5d3a;margin:2px 0 8px">${esc(top.reason)}</div>
+          <button class="small" onclick="activeTab='actions';qaMsg=null;render()">${esc(top.ctaTxt || "לראות מה לעשות")} ←</button>
+        </div>
+      </div>
+    </div>` : ""}
+  </div>`;
+}
+function quickAddHTML(p) {
+  const chip = c => { const on = qaSel.some(x => x.catId === c.id);
+    return `<button onclick="qaTap('${c.id}')" style="color:#1C1C1C;box-shadow:none;border:${on ? '2px solid #1C1C1C' : '1px solid var(--line)'};background:${on ? '#FFD600' : '#fff'};border-radius:999px;padding:9px 13px;font-family:inherit;font-size:13px;font-weight:${on ? '800' : '600'};cursor:pointer">${on ? '✓ ' : '+ '}${esc(c.name)}${c.tag === "biz" ? ' 🏢' : ''}</button>`; };
+  return `<div style="background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:13px 15px;margin-top:12px">
+    <div style="font-weight:800;font-size:14.5px">✏️ 3 ההוצאות הגדולות שלך — לוחצים, לא מקלידים</div>
+    <div class="small muted" style="margin:3px 0 9px">${G("בחרי", "בחר")} מה שיש, ${G("רשמי", "רשום")} כמה בערך יוצא בחודש. בערך זה מצוין 😊</div>
+    <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:9px">${qaCats(p).map(chip).join("")}</div>
+    ${qaSel.map((r, i) => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;background:var(--bg);border-radius:10px;padding:8px 11px">
+      <span style="flex:1;font-weight:700;font-size:13.5px">${esc(r.name)}</span>
+      <span class="muted small">₪ בחודש</span>
+      <input type="number" inputmode="numeric" value="${r.amount || ""}" placeholder="כמה בערך?" onchange="qaAmt(${i}, this.value)" style="width:110px">
+    </div>`).join("")}
+    <div style="display:flex;gap:8px;margin-top:9px">
+      <button onclick="qaSave()" ${qaSel.length ? "" : "disabled"}>שמירה — מה השתנה? 🍋</button>
+      <button class="ghost small" onclick="qaCancel()">לא עכשיו</button>
+    </div>
+  </div>`;
+}
+/* --- 👀 הצצה בדוגמה וחזרה בטוחה: רק מחליפים תצוגה — התיק האישי נשאר שמור --- */
+function peekDemo() {
+  if (DB.profiles.demo) DB.active = "demo"; else loadDemo();
+  viewMonth = activeMonth(P()); render();
+}
+function backFromDemo() {
+  const id = Object.keys(DB.profiles).find(i => i !== "demo");
+  if (id) { DB.active = id; viewMonth = activeMonth(P()); }
+  render();
+}
+
 let obStep = 0;
+const OB_LAST = 11;                  // שלבי השאלון: 0–11. שלב 12 = מסך חיבור הבנק (אחרי הסיום)
+let obBankChoice = null;             // מה נבחר במסך חיבור הבנק
 function obA() { return P().onboarding.answers; }
-function obSet(k, v) { obA()[k] = v; save(); if (k !== "goalsInit") obStep = Math.min(9, obStep + 1); render(); }
+/* בחירה בשאלון: קודם נצבעת צהוב (פידבק מיידי), ורק אז עוברים לשאלה הבאה */
+function obSet(k, v) {
+  obA()[k] = v; save(); render();
+  const target = Math.min(OB_LAST, obStep + 1);
+  setTimeout(() => { if (obStep < target) { obStep = target; render(); } }, 380);
+}
 function obToggle(k, v) { const a = obA(); a[k] = a[k] || []; const i = a[k].indexOf(v); if (i < 0) a[k].push(v); else a[k].splice(i, 1); save(); render(); }
-function obNext() { obStep = Math.min(9, obStep + 1); render(); }
+function obNext() { obStep = Math.min(OB_LAST, obStep + 1); render(); }
 function obBudgetAmt(i, v) { const a = obA(); if (a.budgets && a.budgets[i]) { a.budgets[i].amount = Number(v) || 0; save(); } }
-function obAddBudget() { const a = obA(); const n = ($("obNewBudgetName") || {}).value || ""; if (!n.trim()) return; a.budgets = a.budgets || []; a.budgets.push({ name: n.trim(), amount: Number(($("obNewBudgetAmt") || {}).value) || 300 }); save(); render(); }
+function obAddBudget(tag) {
+  const a = obA(); const sfx = tag === "biz" ? "B" : "H";
+  const n = ($("obNewBudgetName" + sfx) || {}).value || "";
+  if (!n.trim()) return;
+  a.budgets = a.budgets || [];
+  a.budgets.push({ name: n.trim(), amount: Number(($("obNewBudgetAmt" + sfx) || {}).value) || 300, tag: tag === "biz" ? "biz" : "personal" });
+  save(); render();
+}
 function obBack() { obStep = Math.max(0, obStep - 1); render(); }
-function obGoalAmt(i, v) { const a = obA(); if (a.goals && a.goals[i]) { a.goals[i].targetAmount = Number(v) || 0; save(); } }
+/* ---------- צ'יפים של הוצאות מוכנות — זיהוי במקום היזכרות: לוחצים על מה שיש, לא ממציאים ----------
+   match = שם קטגוריית ברירת-מחדל קיימת (בלי לפתוח כפילות). דגלי מס:
+   עסקי = מוכר במס + קיזוז מע"מ תשומות (כמו כל קטגוריה עסקית), חוץ מ:
+   משכורות (אין מע"מ על שכר) וביטוחים (ביטוח פטור ממע"מ) — מוכרים במס אבל בלי קיזוז תשומות. */
+const EXPENSE_CHIPS = {
+  biz: [
+    { label: "שכירות למשרד/קליניקה" },
+    { label: "משכורות", vatDeductible: false },
+    { label: "ספקים" },
+    { label: "שיווק ופרסום" },
+    { label: "הנהלת חשבונות ורו\"ח" },
+    { label: "תוכנות ומנויים" },
+    { label: "ביטוחים", vatDeductible: false },
+    { label: "רכב ודלק" },
+    { label: "ציוד וחומרים" },
+    { label: "השתלמויות וקורסים" }
+  ],
+  personal: [
+    { label: "שכירות / משכנתא", match: "שכר דירה" },   // ממופה לקטגוריית ברירת-המחדל הקיימת — בלי כפילות
+    { label: "מזון וסופר", match: "סופר וקניות לבית" },
+    { label: "חשמל, מים וארנונה", match: "חשבונות" },
+    { label: "חינוך וילדים" },
+    { label: "בריאות" },
+    { label: "רכב", match: "רכב" },
+    { label: "בילויים", match: "בילויים ומסעדות" },
+    { label: "ביגוד", match: "ביגוד ואופנה" },
+    { label: "חופשות" }
+  ]
+};
+/* לחיצה על צ'יפ בשאלון: נבחר (צהוב) + נפתח שדה סכום; לחיצה שוב = ביטול. הכל נשמר ב-a.budgets — אותו מקור אמת */
+function obChipBudget(key, idx) {
+  const def = (EXPENSE_CHIPS[key] || [])[idx]; if (!def) return;
+  const a = obA(); a.budgets = a.budgets || [];
+  const i = a.budgets.findIndex(b => b.name === def.label && (b.tag || "personal") === key);
+  if (i >= 0) a.budgets.splice(i, 1);
+  else {
+    const e = { name: def.label, amount: 0, tag: key, catName: def.match || def.label };
+    if (def.deductible != null) e.deductible = def.deductible;
+    if (def.vatDeductible != null) e.vatDeductible = def.vatDeductible;
+    a.budgets.push(e);
+  }
+  save(); render();
+}
+/* צ'יפים בטאב התקציבים: לחיצה פותחת קטגוריה מוכנה (עם דגלי המס הנכונים); לחיצה שוב מסירה — רק אם עוד לא בשימוש */
+function budgetChipToggle(key, idx) {
+  const def = (EXPENSE_CHIPS[key] || [])[idx]; if (!def) return;
+  const p = P(), nm = def.match || def.label;
+  const c = p.categories.find(x => x.name === nm);
+  if (c) {
+    const used = (c.budget > 0) || (p.transactions || []).some(t => t.categoryId === c.id);
+    if (!used) { p.categories = p.categories.filter(x => x.id !== c.id); save(); render(); }
+    return;
+  }
+  p.categories.push({ id: uid(), name: nm, tag: key === "biz" ? "biz" : "personal", budget: 0,
+    deductible: def.deductible != null ? def.deductible : key === "biz",
+    vatDeductible: def.vatDeductible != null ? def.vatDeductible : key === "biz", keywords: [] });
+  save(); render();
+}
+/* ההכנסה מחושבת לבד: לקוחות × ממוצע ללקוח */
+function obIncomeEst() { const a = obA(); return (a.clientsCount > 0 && a.avgPerClient > 0) ? a.clientsCount * a.avgPerClient : 0; }
+function obSetIncome(k, v) {
+  const a = obA(); a[k] = Number(v) || 0;
+  const est = obIncomeEst();
+  if (est > 0) a.monthlyIncome = est;
+  if (a.avgPerClient > 0) a.avgDeal = a.avgPerClient;
+  save(); render();
+}
+/* כמה חשבונות בנק — קובע הפרדת עסק/בית או מצב חשבון-יחיד */
+function obAcc(n) { const a = obA(); a.accountsCount = n; a.accounts = n >= 2 ? "sep" : "mixed"; save(); render(); }
+/* מסך חיבור הבנק — הבחירות */
+function obBank(choice) { obBankChoice = choice; render(); }
+/* שער החשבון: לפני שנכנסים לאפליקציה — יוצרים אימייל+סיסמה (שלב 13). בלי דילוג. */
+let obAfterSignup = null;
+function obGate(fn) {
+  if (authHasCreds()) { fn(); return; }
+  obAfterSignup = fn; obStep = 13; activeTab = "onboarding"; render();
+}
+function obDone() { obGate(() => { obStep = 0; obBankChoice = null; activeTab = "home"; render(); }); }
+function obManual() { obGate(() => { obStep = 0; obBankChoice = null; activeTab = "cashflow"; render(); }); }
+function obDemo() { obGate(() => {
+  const nm = P().settings.ownerName, g = P().settings.gender;
+  loadDemo();
+  const d = DB.profiles.demo;
+  if (d) { if (nm) d.settings.ownerName = nm; if (g) d.settings.gender = g; d.onboarding = { done: true, answers: {} }; }
+  obStep = 0; obBankChoice = null; activeTab = "home"; save(); render();
+}); }
+/* יצירת החשבון בסוף השאלון — ואז ממשיכים לאן שנבחר במסך חיבור הבנק */
+async function obSignup() {
+  const em = ($("obAuthEmail") || {}).value || "", pw = ($("obAuthPw") || {}).value || "", pw2 = ($("obAuthPw2") || {}).value || "";
+  const bad = authValidate(em, pw, pw2);
+  const err = $("obAuthErr");
+  if (bad) { if (err) { err.textContent = bad; err.style.display = "block"; } return; }
+  const btn = $("obAuthBtn"); if (btn) btn.disabled = true;
+  await authSetCredentials(em, pw);
+  const fn = obAfterSignup; obAfterSignup = null;
+  if (fn) fn();
+  else { obStep = 0; obBankChoice = null; activeTab = "home"; render(); }
+}
+/* עדכון סכום יעד בשאלון — עם רינדור, כדי שהסכום המפורמט (עם פסיקים) יופיע מיד ליד השדה */
+function obGoalAmt(i, v) { const a = obA(); if (a.goals && a.goals[i]) { a.goals[i].targetAmount = Number(v) || 0; save(); render(); } }
 function obFinish() {
   const p = P(), a = p.onboarding.answers;
+  if ((a.name || "").trim()) p.settings.ownerName = a.name.trim();       // השם מהשאלון — לברכה בכל האפליקציה
   if (a.gender) p.settings.gender = a.gender;
-  if (a.accounts) p.settings.accountsSetup = a.accounts;   // sep = חשבון עסקי+פרטי נפרדים
+  if (a.accountsCount) p.settings.accountsCount = a.accountsCount;       // כמה חשבונות בנק
+  if (a.accounts) p.settings.accountsSetup = a.accounts;   // sep = חשבון עסקי+פרטי נפרדים, mixed = הכל בחשבון אחד
   if (a.bizType && ["patur", "morasheh", "baam"].includes(a.bizType)) p.settings.bizType = a.bizType;
   else if (a.bizType === "none") p.settings.bizType = "patur";   // עוד אין עסק — בלי דרישות מע"מ
+  // ההכנסה: לקוחות × ממוצע ללקוח (מחושב בשאלון). תאימות אחורה: גם טווח ישן אם קיים
+  const est = obIncomeEst();
+  if (est > 0) a.monthlyIncome = est;
   const revGoal = { "0-20": 20000, "20-50": 40000, "50-100": 70000, "100+": 110000 };
-  if (a.revenue && revGoal[a.revenue]) p.settings.goalMonthlyIncome = revGoal[a.revenue];
-  if (a.incomeGoal > 0) p.settings.goalMonthlyIncome = a.incomeGoal;      // יעד מדויק גובר על הטווח
+  if (a.revenue && revGoal[a.revenue]) { p.settings.goalMonthlyIncome = revGoal[a.revenue]; p.settings.goalAuto = true; }
+  if (a.incomeGoal > 0) { p.settings.goalMonthlyIncome = a.incomeGoal; p.settings.goalAuto = false; }   // יעד מדויק גובר על הטווח
+  else if (!p.settings.goalMonthlyIncome && a.monthlyIncome > 0) {        // בלי יעד? צמיחה עדינה של 20%
+    p.settings.goalMonthlyIncome = Math.round(a.monthlyIncome * 1.2 / 1000) * 1000;
+    p.settings.goalAuto = true;   // יעד שנגזר אוטומטית — מסומן, כדי שנציג "ברירת מחדל" ולא נמכור אותו כבחירה (סקירת מוכנות 22.7)
+  }
   if (a.avgDeal > 0) p.settings.avgDealSize = a.avgDeal;                  // מזין את מנוע הצמיחה ומחיר הרצפה
   // מקדמות ותשלומי מדינה מהשאלון (אופציונלי — אם לא מולא, מזהים מהבנק)
   if (a.mikdamaPct > 0 && p.settings.bizType !== "patur") {
@@ -899,20 +1336,32 @@ function obFinish() {
   }
   p.goals = (a.goals && a.goals.length) ? a.goals : defaultGoals(a.monthlyIncome);
   if (a.freedomMonthly > 0 && p.freedomPlan) p.freedomPlan.annualSpendTarget = a.freedomMonthly * 12;
-  // הכנסה חודשית מהשאלון → נכנסת כהכנסה קבועה, כדי שהתזרים, התחזית והמסים יעבדו מהרגע הראשון
+  // הכנסה חודשית מהשאלון → נכנסת כהכנסה קבועה, כדי שהתזרים, התחזית והמסים יעבדו מהרגע הראשון.
+  // "המחירים כוללים מע"מ?" מהשאלון קובע איך מפרידים את המע"מ; לא נענה — כמו קודם (כולל)
   if (a.monthlyIncome > 0 && !(p.recurring || []).some(r => r.kind === "income")) {
-    p.recurring.push({ id: uid(), name: "הכנסה חודשית (מהשאלון — אפשר לדייק)", day: 10, amount: a.monthlyIncome, kind: "income", vatInclusive: true, note: "" });
+    const inclVat = a.pricesVat ? a.pricesVat === "yes" : true;
+    p.recurring.push({ id: uid(), name: "הכנסה חודשית (מהשאלון — אפשר לדייק)", day: 10, amount: a.monthlyIncome, kind: "income", vatInclusive: inclVat, note: inclVat ? "כולל מע\"מ" : "לפני מע\"מ" });
   }
+  // מספר וואטסאפ מהשאלון — נשמר בהגדרות (החיבור בפועל נעשה בהקמה מול הצוות)
+  if (a.whatsapp === "yes" && (a.whatsappPhone || "").trim()) p.settings.whatsapp = a.whatsappPhone.trim();
   // מקור אחד לאמת: התקציבים הם רק מה שהמשתמש הזין בשאלון — מאפסים כל ברירת מחדל קודמת
   p.categories.forEach(c => { c.budget = 0; });
   (a.budgets || []).forEach(b => {
-    if (!b.name || !(b.amount > 0)) return;
-    const c = p.categories.find(x => x.name === b.name);
-    if (c) c.budget = b.amount;
-    else p.categories.push({ id: uid(), name: b.name, tag: b.tag || "personal", budget: b.amount,
-      deductible: b.tag === "biz", vatDeductible: b.tag === "biz", keywords: [] });
+    if (!b.name || !(b.amount > 0 || b.catName)) return;   // צ'יפ שנבחר נשמר גם בלי סכום — הקטגוריה נפתחת למעקב
+    const nm = b.catName || b.name;                        // צ'יפ ממופה לקטגוריית ברירת-מחדל קיימת — בלי כפילויות
+    const c = p.categories.find(x => x.name === nm);
+    // budgetSetMonth = "חודש קיבוץ": תקציב שזה עתה נקבע בשאלון לא נוזף בהתראה עד שעובר חודש קלנדרי אחד —
+    // כדי שמי שרושמת הוצאה תואמת דרך ההזנה המהירה מיד אחרי ההרשמה לא תיתקל בנזיפה כתומה תוך שניות (QA 23.7)
+    if (c) { c.budget = b.amount || 0; c.budgetSetMonth = thisMonth(); }
+    else p.categories.push({ id: uid(), name: nm, tag: b.tag || "personal", budget: b.amount || 0,
+      deductible: b.deductible != null ? b.deductible : b.tag === "biz",
+      vatDeductible: b.vatDeductible != null ? b.vatDeductible : b.tag === "biz", keywords: [], budgetSetMonth: thisMonth() });
   });
-  p.onboarding.done = true; obStep = 0; activeTab = "home"; save(); render();
+  // סיימנו את השאלון — קודם "הרגע שלך" (הערך הראשון מהמספרים שסיפרה), ואז מסך חיבור הבנק.
+  // אם לא סופרה הכנסה — אין מה להעריך (לא ממציאים מספר), ישר לחיבור הבנק.
+  p.onboarding.done = true; obBankChoice = null; save();
+  obStep = valueMoment(p) ? 14 : 12;
+  activeTab = "onboarding"; render();
 }
 function obChip(k, val, label, on) {
   return `<button onclick="obSet('${k}','${val}')" style="text-align:right;color:#1C1C1C;box-shadow:none;border:${on ? '2px solid #1C1C1C' : '1px solid var(--line)'};background:${on ? '#FFD600' : '#fff'};border-radius:13px;padding:12px 14px;font-family:inherit;font-size:14px;font-weight:${on ? '800' : '600'};cursor:pointer;width:100%">${label}</button>`;
@@ -924,13 +1373,9 @@ function obChipMulti(k, val, label) {
 function renderOnboarding() {
   const p = P(), a = p.onboarding.answers;
   // היעדים נוצרים רק כשמגיעים לשלב היעדים — אז כבר יודעים את ההכנסה, וקרן הביטחון מותאמת אליה
-  if (!a.goals && obStep >= 6) { a.goals = defaultGoals(a.monthlyIncome); }
-  const total = 10;
-  if (!a.budgets) a.budgets = [
-    { name: "סופר וקניות לבית", amount: 1800 }, { name: "חשבונות", amount: 700 },
-    { name: "דלק ורכב", amount: 900 }, { name: "בילויים ויציאות", amount: 800 },
-    { name: "תוכנות ומנויים לעסק", amount: 300, tag: "biz" }, { name: "שיווק ופרסום", amount: 500, tag: "biz" }
-  ];
+  if (!a.goals && obStep >= 7 && obStep <= OB_LAST) { a.goals = defaultGoals(a.monthlyIncome); }
+  const total = OB_LAST + 1;
+  if (!a.budgets) a.budgets = [];   // מתחילים ריק — בשלבי התקציב לוחצים על צ'יפים מוכנים במקום להמציא קטגוריות
   const dots = Array.from({ length: total }, (_, i) =>
     `<span style="height:5px;flex:1;background:${i <= obStep ? 'var(--brand)' : '#e6e0d0'};border-radius:3px"></span>`).join("");
   const wrap = (inner, opts = {}) => `
@@ -946,67 +1391,89 @@ function renderOnboarding() {
   const H = t => `<h2 style="margin:0 0 4px">${t}</h2>`;
   const sub = t => `<p class="desc" style="margin:0 0 14px">${t}</p>`;
   const col = inner => `<div style="display:flex;flex-direction:column;gap:9px">${inner}</div>`;
+  /* שורות תקציב לפי תחום (עסק/בית) — האינדקס נשמר מול המערך המלא */
+  const budgetRows = tag => a.budgets.map((b, i) => ({ b, i }))
+    .filter(x => ((x.b.tag || "personal") === "biz") === (tag === "biz"))
+    .map(x => `<div style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px">
+      <span style="flex:1;font-weight:600">${esc(x.b.name)}</span>
+      <span class="muted small">₪ לחודש</span>
+      <input type="number" value="${x.b.amount || ""}" placeholder="כמה בערך?" onchange="obBudgetAmt(${x.i}, this.value)" style="width:100px">
+    </div>`).join("");
+  const budgetAdd = tag => { const sfx = tag === "biz" ? "B" : "H"; return `<div class="addLine" style="margin-top:10px">
+      <div><label>+ משהו אחר</label><input type="text" id="obNewBudgetName${sfx}" placeholder="${tag === "biz" ? "למשל: משלוחים, אריזות" : "למשל: חיות מחמד, מתנות"}"></div>
+      <div><label>תקציב</label><input type="number" id="obNewBudgetAmt${sfx}" value="300"></div>
+      <button onclick="obAddBudget('${tag}')">+ הוספה</button>
+    </div>`; };
+  /* רשת הצ'יפים — לוחצים על מה שיש, הצ'יף נצבע צהוב ונפתחת לו שורת סכום למטה */
+  const chipGrid = key => `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">` +
+    EXPENSE_CHIPS[key].map((c, i) => {
+      const on = (a.budgets || []).some(b => b.name === c.label && (b.tag || "personal") === key);
+      return `<button onclick="obChipBudget('${key}',${i})" style="color:#1C1C1C;box-shadow:none;border:${on ? '2px solid #1C1C1C' : '1px solid var(--line)'};background:${on ? '#FFD600' : '#fff'};border-radius:999px;padding:10px 14px;font-family:inherit;font-size:13.5px;font-weight:${on ? '800' : '600'};cursor:pointer">${on ? '✓ ' : '+ '}${esc(c.label)}</button>`;
+    }).join("") + `</div>`;
   let inner;
   switch (obStep) {
     case 0:
       inner = `<div style="text-align:center;padding:10px 0">${lemonSVG}
         <h2 style="margin:10px 0 4px;color:var(--brand)">היי! אני Soleo 🍋</h2>
-        <p class="desc">2 דקות, ואני תופר לך את האפליקציה בדיוק עליך — על העסק, על מה שהכי כואב, ועל החלום. אחר כך אני עושה את רוב העבודה בשבילך.</p>
-        <div style="font-size:13.5px;font-weight:700;margin:14px 0 8px">רגע לפני — איך לפנות אליך? 😊</div>
+        <p class="desc">2 דקות, ואני תופר לך את האפליקציה בדיוק עליך. אחר כך אני עושה את רוב העבודה בשבילך.</p>
+        <div style="font-size:15px;font-weight:800;margin:16px 0 8px">איך קוראים לך? 🍋</div>
+        <input type="text" value="${esc(a.name || "")}" placeholder="השם הפרטי שלך" oninput="obA().name=this.value;save();var el=document.getElementById('obHi');if(el){var n=this.value.trim();el.textContent=n?('נעים להכיר, '+n+' 💛'):'';el.style.display=n?'block':'none'}" style="max-width:240px;text-align:center;font-size:16px">
+        <div id="obHi" class="small" style="color:#8a6a00;font-weight:700;margin-top:8px;display:${(a.name || "").trim() ? "block" : "none"}">${(a.name || "").trim() ? `נעים להכיר, ${esc(a.name.trim())} 💛` : ""}</div>
+        <div style="font-size:13.5px;font-weight:700;margin:16px 0 8px">ואיך לפנות אליך? 😊</div>
         <div style="display:flex;gap:9px;max-width:340px;margin:0 auto">
-          <button onclick="obA().gender='f';P().settings.gender='f';save();obNext()" style="flex:1;color:#1C1C1C;box-shadow:none;border:${a.gender==='f'?'2px solid #1C1C1C':'1px solid var(--line)'};background:${a.gender==='f'?'#FFD600':'#fff'};border-radius:13px;padding:12px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">בלשון נקבה 👩</button>
-          <button onclick="obA().gender='m';P().settings.gender='m';save();obNext()" style="flex:1;color:#1C1C1C;box-shadow:none;border:${a.gender==='m'?'2px solid #1C1C1C':'1px solid var(--line)'};background:${a.gender==='m'?'#FFD600':'#fff'};border-radius:13px;padding:12px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">בלשון זכר 👨</button>
+          <button onclick="obA().gender='f';P().settings.gender='f';save();render()" style="flex:1;color:#1C1C1C;box-shadow:none;border:${a.gender==='f'?'2px solid #1C1C1C':'1px solid var(--line)'};background:${a.gender==='f'?'#FFD600':'#fff'};border-radius:13px;padding:12px;font-family:inherit;font-size:14px;font-weight:${a.gender==='f'?'800':'700'};cursor:pointer">בלשון נקבה 👩</button>
+          <button onclick="obA().gender='m';P().settings.gender='m';save();render()" style="flex:1;color:#1C1C1C;box-shadow:none;border:${a.gender==='m'?'2px solid #1C1C1C':'1px solid var(--line)'};background:${a.gender==='m'?'#FFD600':'#fff'};border-radius:13px;padding:12px;font-family:inherit;font-size:14px;font-weight:${a.gender==='m'?'800':'700'};cursor:pointer">בלשון זכר 👨</button>
         </div>
         <button class="ghost small" style="margin-top:14px" onclick="P().onboarding.done=true;activeTab='home';save();render()">כבר יש לי הכל — דלג לאפליקציה ←</button></div>`;
-      return $("tab-onboarding").innerHTML = wrap(inner, {});
+      return $("tab-onboarding").innerHTML = wrap(inner, { next: "obNext()" });
     case 1:
       inner = H("איזה סוג עסק יש לך?") + sub("זה קובע איך אחשב לך את המס — הכי מדויק שאפשר.") +
         col(obChip("bizType", "patur", G("עוסקת פטורה","עוסק פטור") + ` <span style="font-weight:400;font-size:12.5px;color:#6b6b6b">— בלי מע"מ, למחזור שנתי עד ~123 אלף ₪</span>`, a.bizType === "patur") +
             obChip("bizType", "morasheh", G("עוסקת מורשה","עוסק מורשה") + ` <span style="font-weight:400;font-size:12.5px;color:#6b6b6b">— ${G("גובה","גובה")} מע"מ מהלקוחות ${G("ומקזזת","ומקזז")} על הוצאות</span>`, a.bizType === "morasheh") +
             obChip("bizType", "baam", "חברה בע\"מ", a.bizType === "baam") +
-            obChip("bizType", "none", "עוד לא פתחתי עסק", a.bizType === "none")) +
-        `<div style="background:#fff;border:1px solid var(--line);border-radius:13px;padding:11px 13px;margin-top:10px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:7px">🏦 יש לך חשבון בנק נפרד לעסק?</div>
-          <div style="display:flex;gap:8px">
-            ${[["sep","כן, נפרד"],["mixed","הכל בחשבון אחד"]].map(o=>`<button onclick="obA().accounts='${o[0]}';save();render()" style="flex:1;color:#1C1C1C;box-shadow:none;border:${a.accounts===o[0]?'2px solid #1C1C1C':'1px solid var(--line)'};background:${a.accounts===o[0]?'#FFD600':'#fff'};border-radius:11px;padding:9px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">${o[1]}</button>`).join("")}
-          </div>
-          ${a.accounts==='sep'?`<div class="small" style="color:#47541F;margin-top:7px">מעולה — נחבר את שניהם, ונדאג שהעברות ביניהם לא ייספרו פעמיים ⇄</div>`:a.accounts==='mixed'?`<div style="background:#FFF6D9;border:1px solid #F0E3B2;border-radius:10px;padding:9px 11px;margin-top:7px;font-size:12.5px;line-height:1.6;color:#6d5c12">💡 <b>ההמלצה שלנו:</b> שווה לפתוח חשבון בנק נפרד לעסק — רואים בשנייה מה של העסק ומה של הבית, קל יותר מול רואה החשבון, ואפשר לשלם לעצמך משכורת אמיתית כל חודש. זה בחינם ולוקח שעה בבנק.<br>עד אז — אנחנו מפרידים בשבילך לפי קטגוריות. אפס התעסקות 😊</div>`:""}
-        </div>`;
+            obChip("bizType", "none", "עוד לא פתחתי עסק", a.bizType === "none"));
       return $("tab-onboarding").innerHTML = wrap(inner);
-    case 2:
-      inner = H("כמה בערך נכנס בחודש טוב?") + sub("בערך בלבד — כדי להתאים לך את הליווי. אף אחד לא רואה את זה חוץ ממך.") +
-        col(obChip("revenue", "0-20", "עד ₪20,000", a.revenue === "0-20") +
-            obChip("revenue", "20-50", "₪20,000–50,000", a.revenue === "20-50") +
-            obChip("revenue", "50-100", "₪50,000–100,000", a.revenue === "50-100") +
-            obChip("revenue", "100+", "מעל ₪100,000", a.revenue === "100+")) +
-        `<div style="background:#fff;border:1px solid var(--line);border-radius:13px;padding:11px 13px;margin-top:10px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:6px">ואם בא לך לדייק — כמה נכנס בחודש ממוצע? <span class="muted small">(לא חובה)</span></div>
+    case 2: {
+      const est = obIncomeEst();
+      inner = H("כמה נכנס לך מהעסק? 💛") + sub("בלי לחשב כלום בראש — שתי שאלות קטנות, ואני כבר אחשב בשבילך. בערך זה מצוין.") +
+        `<div style="background:#fff;border:1px solid var(--line);border-radius:13px;padding:13px">
+          <div style="font-size:14px;font-weight:700;margin-bottom:7px">כמה לקוחות משלמים לך בערך בחודש?</div>
+          <input type="number" value="${a.clientsCount || ""}" placeholder="למשל 8" onchange="obSetIncome('clientsCount', this.value)" style="width:110px">
+        </div>
+        <div style="background:#fff;border:1px solid var(--line);border-radius:13px;padding:13px;margin-top:10px">
+          <div style="font-size:14px;font-weight:700;margin-bottom:7px">וכמה משלם לך לקוח ממוצע בחודש?</div>
           <div style="display:flex;align-items:center;gap:8px"><span class="muted">₪</span>
-          <input type="number" value="${a.monthlyIncome || ""}" placeholder="למשל 28,000" onchange="obA().monthlyIncome=Number(this.value)||0;save()" style="width:140px">
-          <span class="small muted">ככה נראה לך תזרים ומסים מדויקים מהרגע הראשון</span></div>
+          <input type="number" value="${a.avgPerClient || ""}" placeholder="למשל 2,500" onchange="obSetIncome('avgPerClient', this.value)" style="width:130px">
+          <span class="small muted">בערך, אפשר לעגל 😊</span></div>
         </div>
-        <div style="background:#FFF6D9;border-radius:13px;padding:11px 13px;margin-top:10px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:6px">🎯 ושתי שאלות שיעזרו לנו לכוון אותך לצמיחה:</div>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:13px;min-width:170px">כמה שווה לך עסקה/לקוח ממוצע?</span><span class="muted">₪</span>
-          <input type="number" value="${a.avgDeal || ""}" placeholder="למשל 2,500" onchange="obA().avgDeal=Number(this.value)||0;save()" style="width:110px"><span class="small muted">בחודש</span></div>
-          <div style="display:flex;align-items:center;gap:8px"><span style="font-size:13px;min-width:170px">לכמה בחודש בא לך להגיע?</span><span class="muted">₪</span>
-          <input type="number" value="${a.incomeGoal || ""}" placeholder="40,000" onchange="obA().incomeGoal=Number(this.value)||0;save()" style="width:130px"></div>
-          ${a.avgDeal>0 && a.incomeGoal>0 && a.monthlyIncome>0 ? `<div style="margin-top:8px;font-size:13.5px;color:#8a6a00;font-weight:700">✨ כלומר: כדי להגיע ליעד חסרים לך בערך ${Math.max(0,Math.ceil((a.incomeGoal-a.monthlyIncome)/a.avgDeal))} לקוחות/עסקאות בחודש. את זה נעזור לך להשיג.</div>`:""}
-        </div>
+        ${(a.bizType === "morasheh" || a.bizType === "baam") ? (function(){
+          // "המחירים כוללים מע"מ?" — כפתורי בחירה בלי קפיצה לשלב הבא (לעוסק פטור אין מע"מ — לא שואלים)
+          const vb = (v, label) => `<button onclick="obA().pricesVat='${v}';save();render()" style="flex:1;color:#1C1C1C;box-shadow:none;border:${a.pricesVat === v ? '2px solid #1C1C1C' : '1px solid var(--line)'};background:${a.pricesVat === v ? '#FFD600' : '#fff'};border-radius:11px;padding:9px 12px;font-family:inherit;font-size:13.5px;font-weight:${a.pricesVat === v ? '800' : '600'};cursor:pointer">${a.pricesVat === v ? '✓ ' : ''}${label}</button>`;
+          return `<div style="background:#fff;border:1px solid var(--line);border-radius:13px;padding:13px;margin-top:10px">
+            <div style="font-size:14px;font-weight:700;margin-bottom:7px">המחירים שציינת כוללים מע"מ?</div>
+            <div style="display:flex;gap:8px">${vb("yes", "כן, כולל מע\"מ")}${vb("no", "לא, לפני מע\"מ")}</div>
+          </div>`; })() : ""}
+        ${est > 0 ? `<div style="background:#FFF6D9;border:1px solid #F0D98A;border-radius:13px;padding:12px 14px;margin-top:10px;font-size:14.5px;line-height:1.7;color:#7a5c12">✨ זאת אומרת בערך <b>${fmt(est)} בחודש</b> — נשמע נכון? אם לא, אפשר לתקן את המספרים למעלה.</div>` : ""}
         <div style="background:#fff;border:1px solid var(--line);border-radius:13px;padding:11px 13px;margin-top:10px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:6px">🧺 מה המוצר או השירות המרכזי שלך? <span class="muted small">(אפשר להוסיף עוד אחר כך)</span></div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <input type="text" value="${esc(a.mainProduct||"")}" placeholder="למשל: ליווי חודשי / טיפול / קורס" onchange="obA().mainProduct=this.value;save()" style="flex:2;min-width:150px">
-            <span class="muted">מחיר ₪</span><input type="number" value="${a.mainProductPrice||""}" placeholder="2,500" onchange="obA().mainProductPrice=Number(this.value)||0;save()" style="width:90px">
-            <span class="muted">עלות ₪</span><input type="number" value="${a.mainProductCost||""}" placeholder="0" onchange="obA().mainProductCost=Number(this.value)||0;save()" style="width:80px">
-          </div>
-          <div class="small muted" style="margin-top:5px">עלות = מה שיוצא לך על כל עסקה כזאת (חומרים, ספקים, עמלות). ככה נראה לך כמה באמת נשאר מכל מוצר — לא רק כמה נכנס.</div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px">🎯 ולכמה בחודש בא לך להגיע? <span class="muted small">(לא חובה)</span></div>
+          <div style="display:flex;align-items:center;gap:8px"><span class="muted">₪</span>
+          <input type="number" value="${a.incomeGoal || ""}" placeholder="למשל 40,000" onchange="obA().incomeGoal=Number(this.value)||0;save();render()" style="width:130px"></div>
+          ${a.incomeGoal > 0 && a.avgPerClient > 0 && est > 0 ? `<div style="margin-top:8px;font-size:13px;color:#8a6a00;font-weight:700">✨ כלומר: עוד בערך ${Math.max(0, Math.ceil((a.incomeGoal - est) / a.avgPerClient))} לקוחות בחודש — ואת זה נעזור לך להשיג 💪</div>` : ""}
         </div>
         ${(a.bizType === "morasheh" || a.bizType === "baam") ? `<div style="background:var(--brand-soft);border-radius:13px;padding:11px 13px;margin-top:10px">
-          <div style="font-size:13px;color:#47541F">🏛️ <b>ומה עם מקדמות המס והביטוח הלאומי?</b> כלום — אנחנו נזהה אותם לבד מחשבון הבנק שלך, לפי התשלומים של החודשים האחרונים. אפס טפסים 😊</div>
+          <div style="font-size:13px;color:#47541F">🏛️ <b>ומה עם מקדמות המס והביטוח הלאומי?</b> כלום — אנחנו נזהה אותם לבד מחשבון הבנק שלך. אפס טפסים 😊</div>
         </div>` : ""}`;
-      return $("tab-onboarding").innerHTML = wrap(inner);
-    case 3:
+      return $("tab-onboarding").innerHTML = wrap(inner, { next: "obNext()" });
+    }
+    case 3: {
+      const accChip = (n, label) => `<button onclick="obAcc(${n})" style="text-align:right;color:#1C1C1C;box-shadow:none;border:${a.accountsCount === n ? '2px solid #1C1C1C' : '1px solid var(--line)'};background:${a.accountsCount === n ? '#FFD600' : '#fff'};border-radius:13px;padding:12px 14px;font-family:inherit;font-size:14px;font-weight:${a.accountsCount === n ? '800' : '600'};cursor:pointer;width:100%">${a.accountsCount === n ? '✓ ' : ''}${label}</button>`;
+      inner = H("כמה חשבונות בנק יש לך? 🏦") + sub("ככה אני יודע איך לעשות לך סדר בין העסק לבית — בלי שתצטרכי לחשוב על זה.") +
+        col(accChip(1, "חשבון אחד") + accChip(2, "שני חשבונות") + accChip(3, "יותר משניים")) +
+        (a.accountsCount >= 2 ? `<div style="background:var(--brand-soft);border-radius:13px;padding:12px 14px;margin-top:10px;font-size:13.5px;line-height:1.7;color:#47541F">מעולה — אחד לעסק ואחד לבית? ככה הכי נכון 💛 נגדיר חשבון אחד עסקי ואחד ביתי, ונדאג שהעברות ביניהם לא ייספרו פעמיים ⇄</div>`
+        : a.accountsCount === 1 ? `<div style="background:#FFF6D9;border:1px solid #F0E3B2;border-radius:13px;padding:12px 14px;margin-top:10px;font-size:13.5px;line-height:1.7;color:#6d5c12">💛 <b>טיפ מאיתנו:</b> כשיהיה לך רגע, שווה לפתוח חשבון נפרד לעסק — זה עושה סדר אמיתי.<br>בינתיים? אנחנו נעשה את הסדר בשבילך: נפריד בתוך החשבון מה של העסק 🏢 ומה של הבית 🏠 — והתקציב ייבנה בנפרד לכל אחד, מול אותו חשבון. אפס התעסקות 😊</div>` : "");
+      return $("tab-onboarding").innerHTML = wrap(inner, a.accountsCount ? { next: "obNext()" } : {});
+    }
+    case 4:
       inner = H("מה הכי כואב לך עכשיו?") + sub("זה יקבע מה יופיע לך ראשון במסך הבית.") +
         col(obChip("pain", "left", `💸 לא ${G("יודעת","יודע")} כמה באמת נשאר לי`, a.pain === "left") +
             obChip("pain", "tax", `🧾 אני לא ${G("עוקבת","עוקב")} אחרי המס — ולא ${G("יודעת","יודע")} כמה צפוי לרדת`, a.pain === "tax") +
@@ -1015,7 +1482,7 @@ function renderOnboarding() {
             obChip("pain", "grow", `📈 רוצה לגדול, לא ${G("יודעת","יודע")} איך`, a.pain === "grow") +
             obChip("pain", "price", "🏷️ התמחור שלי נמוך מדי", a.pain === "price"));
       return $("tab-onboarding").innerHTML = wrap(inner);
-    case 4:
+    case 5:
       inner = H("במה נתמקד בשבילך?") + sub("אפשר לבחור כמה — ואני אבנה סביבם את האפליקציה.") +
         col(obChipMulti("focus", "order", "🧹 לעשות סדר בכסף") +
             obChipMulti("focus", "keep", "💎 להבין כמה באמת נשאר") +
@@ -1023,13 +1490,13 @@ function renderOnboarding() {
             obChipMulti("focus", "grow", "📈 לגדול — עוד הכנסה") +
             obChipMulti("focus", "coach", "💬 ליווי אישי של מאמן פיננסי"));
       return $("tab-onboarding").innerHTML = wrap(inner, { next: "obNext()" });
-    case 5:
+    case 6:
       inner = H("כמה בא לך להתעסק?") + sub(`אני יכול לעשות כמעט הכל בשבילך — ${G("את בוחרת","אתה בוחר")} את הקצב.`) +
         col(obChip("involve", "auto", "😌 תעשו הכל בשבילי", a.involve === "auto") +
             obChip("involve", "see", `👀 ${G("אוהבת","אוהב")} לראות ולהחליט`, a.involve === "see") +
             obChip("involve", "control", `🎛️ ${G("שולטת","שולט")} בכל פרט`, a.involve === "control"));
       return $("tab-onboarding").innerHTML = wrap(inner);
-    case 6:
+    case 7:
       inner = H(`${G("בואי","בוא")} נבנה לך יעדים 🎯`) + sub(`קצר, בינוני ורחוק. שמתי ברירת מחדל לפי מה שסיפרת לי — ${G("שני","שנה")} את הסכומים אם בא לך, או פשוט ${G("המשיכי","המשך")}.`) +
         `<div style="display:flex;flex-direction:column;gap:10px">
           ${a.goals.map((g, i) => `<div style="background:#fff;border:1px solid var(--line);border-radius:13px;padding:11px 13px">
@@ -1039,14 +1506,15 @@ function renderOnboarding() {
               <span style="flex:1;font-weight:600">${esc(g.name)}</span>
               <span style="color:var(--muted)">₪</span>
               <input type="number" value="${g.targetAmount}" onchange="obGoalAmt(${i}, this.value)" style="width:100px">
-            </div></div>`).join("")}
+            </div>
+            ${g.targetAmount > 0 ? `<div class="small muted" style="text-align:left;margin-top:2px">= ${fmt(g.targetAmount)}</div>` : ""}</div>`).join("")}
         </div>
         <div style="background:#FFF6D9;border-radius:13px;padding:13px;margin-top:12px">
           <div style="font-weight:800;font-size:14px">🌴 והתרגיל הגדול — החופש הכלכלי שלך</div>
           <div class="small" style="color:#6d5c00;margin:4px 0 8px">דמיינו רגע: לא חייבים לעבוד. כמה כסף בחודש היה עושה לכם חיים טובים באמת?</div>
           <div style="display:flex;align-items:center;gap:8px">
             <span style="color:var(--muted)">₪</span>
-            <input type="number" value="${a.freedomMonthly || ""}" placeholder="למשל 25,000" onchange="obA().freedomMonthly=Number(this.value)||0;save()" style="width:130px">
+            <input type="number" value="${a.freedomMonthly || ""}" placeholder="למשל 25,000" onchange="obA().freedomMonthly=Number(this.value)||0;save();render()" style="width:130px">
             <span class="small muted">בחודש, בלי לעבוד</span>
           </div>
           ${a.freedomMonthly > 0 ? (function(){
@@ -1065,42 +1533,110 @@ function renderOnboarding() {
             </div>`; })() : ""}
         </div>`;
       return $("tab-onboarding").innerHTML = wrap(inner, { next: "obNext()" });
-    case 7:
-      inner = H(`עכשיו ${G("בואי","בוא")} נתקצב יחד 🎈`) +
-        sub("שאלה חמודה: כמה בערך בא לך לשים בצד כל חודש לכל דבר? זה לא מחייב — נתחיל ממשהו, ותמיד נעדכן. 😊") +
-        `<div style="display:flex;flex-direction:column;gap:8px">
-          ${a.budgets.map((b, i) => `<div style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px">
-            <span style="flex:1;font-weight:600">${esc(b.name)}</span>
-            <span class="muted small">₪ לחודש</span>
-            <input type="number" value="${b.amount}" onchange="obBudgetAmt(${i}, this.value)" style="width:100px">
-          </div>`).join("")}
-        </div>
-        <div class="addLine" style="margin-top:10px">
-          <div><label>עוד קטגוריה</label><input type="text" id="obNewBudgetName" placeholder="למשל: חינוך, מתנות"></div>
-          <div><label>תקציב</label><input type="number" id="obNewBudgetAmt" value="300"></div>
-          <button onclick="obAddBudget()">+ הוספה</button>
-        </div>`;
-      return $("tab-onboarding").innerHTML = wrap(inner, { next: "obNext()" });
     case 8:
-      inner = H("רוצה עדכונים בוואטסאפ? 💬") + sub(`תזכורות עדינות ותובנות — רק דברים שחשוב ${G("שתדעי","שתדע")}. בלי ספאם.`) +
-        col(obChip("whatsapp", "yes", "✅ כן, שלחו לי", a.whatsapp === "yes") +
-            obChip("whatsapp", "no", "לא עכשיו", a.whatsapp === "no"));
-      return $("tab-onboarding").innerHTML = wrap(inner);
+      inner = H("מה ההוצאות הקבועות של העסק? 🏢") +
+        sub(`לוחצים על מה שיש 🍋 ואז רושמים כמה בערך יוצא בחודש — בערך לגמרי, תמיד נעדכן. 😊${a.accountsCount === 1 ? " גם בחשבון אחד — לעסק יש תקציב משלו." : ""}`) +
+        chipGrid("biz") +
+        `<div style="display:flex;flex-direction:column;gap:8px">${budgetRows("biz")}</div>` + budgetAdd("biz");
+      return $("tab-onboarding").innerHTML = wrap(inner, { next: "obNext()" });
     case 9:
+      inner = H("ועכשיו הבית 🏠") +
+        sub("על מה יוצא כסף כל חודש? לוחצים על מה שיש — וגם כאן בערך זה מצוין, בלי לחשוב יותר מדי. 💛") +
+        chipGrid("personal") +
+        `<div style="display:flex;flex-direction:column;gap:8px">${budgetRows("personal")}</div>` + budgetAdd("personal");
+      return $("tab-onboarding").innerHTML = wrap(inner, { next: "obNext()" });
+    case 10:
+      /* "כן" לא קופץ לשלב הבא — קודם אוספים את המספר, אחרת ההבטחה ריקה (סקירת מוכנות 22.7) */
+      inner = H("רוצה עדכונים בוואטסאפ? 💬") + sub(`תזכורות עדינות ותובנות — רק דברים שחשוב ${G("שתדעי","שתדע")}. בלי ספאם.`) +
+        col(`<button onclick="obA().whatsapp='yes';save();render()" style="text-align:right;color:#1C1C1C;box-shadow:none;border:${a.whatsapp === 'yes' ? '2px solid #1C1C1C' : '1px solid var(--line)'};background:${a.whatsapp === 'yes' ? '#FFD600' : '#fff'};border-radius:13px;padding:12px 14px;font-family:inherit;font-size:14px;font-weight:${a.whatsapp === 'yes' ? '800' : '600'};cursor:pointer;width:100%">✅ כן, שלחו לי</button>` +
+            (a.whatsapp === "yes" ? `<div style="background:#fff;border:1px solid var(--line);border-radius:13px;padding:12px 14px">
+              <div style="font-size:13.5px;font-weight:700;margin-bottom:6px">לאיזה מספר? 📱</div>
+              <input type="tel" dir="ltr" value="${esc(a.whatsappPhone || "")}" placeholder="050-1234567" onchange="obA().whatsappPhone=this.value;save()" style="width:170px;text-align:center">
+              <div class="small muted" style="margin-top:6px">נחבר אותך בפגישת ההקמה — המספר נשמר רק אצלך באפליקציה.</div>
+            </div>` : "") +
+            obChip("whatsapp", "no", "לא עכשיו", a.whatsapp === "no"));
+      return $("tab-onboarding").innerHTML = wrap(inner, a.whatsapp === "yes" ? { next: "obNext()" } : {});
+    case 11: {
       const focusTxt = { order: "סדר בכסף", keep: "כמה באמת נשאר לך", tax: "חיסכון במס", grow: "צמיחה", coach: "ליווי אישי" };
       const chosen = (a.focus || ["keep"]).map(f => focusTxt[f]).filter(Boolean);
+      const nBiz = (a.budgets || []).filter(b => b.tag === "biz").length, nHome = (a.budgets || []).length - nBiz;
       inner = `<div style="text-align:center;padding:6px 0">${lemonSVG}
-        <h2 style="margin:10px 0 4px;color:var(--brand)">הכל מוכן! תפרתי לך את Soleo 🍋</h2>
+        <h2 style="margin:10px 0 4px;color:var(--brand)">הכל מוכן${(a.name||"").trim() ? ", " + esc(a.name.trim()) : ""}! תפרתי לך את Soleo 🍋</h2>
         <p class="desc">מעכשיו האפליקציה מותאמת בדיוק לך:</p>
         <div style="display:flex;flex-direction:column;gap:7px;text-align:right;max-width:340px;margin:0 auto">
           <div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">🎯 נתמקד ב: <b>${chosen.join(" · ") || "כמה באמת נשאר לך"}</b></div>
           <div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">🧾 נשמור לך על: <b>מס חכם — כמה חוזר מכל הוצאה</b></div>
           <div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">🏆 נצעד ליעדים: <b>${a.goals.length} יעדים (קצר/בינוני/רחוק)</b></div>
-          <div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">🎈 תקצבנו יחד: <b>${(a.budgets||[]).length} קטגוריות</b></div>
-          ${a.accounts==='sep'?`<div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">💵 נגדיר לך <b>משכורת קבועה מהעסקי לפרטי</b> — כמו שכיר, בלי בלגן בין החשבונות</div>`:""}
+          <div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">🎈 תקצבנו יחד: <b>🏢 ${nBiz} לעסק · 🏠 ${nHome} לבית</b></div>
+          ${a.accounts==='sep'?`<div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">💵 נגדיר לך <b>משכורת קבועה מהעסקי לפרטי</b> — כמו שכיר, בלי בלגן בין החשבונות</div>`
+          : a.accounts==='mixed'?`<div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">🔀 חשבון אחד? סבבה — <b>נפריד בשבילך מה של העסק 🏢 ומה של הבית 🏠</b>, בלי שתתעסקי בזה</div>`:""}
           ${a.freedomMonthly>0?`<div style="background:#FFF6D9;border:1px solid #F0D98A;border-radius:11px;padding:9px 12px">🌴 מספר החופש שלך: <b>${fmt(a.freedomMonthly*12*25)}</b><div class="small" style="color:#6d5c00;margin-top:2px">הון שמניב לך ${fmt(a.freedomMonthly)} בחודש בלי לעבוד (כלל ה-4%). נבנה את הדרך לשם צעד-צעד — במסך "תוכנית חופש".</div></div>`:""}
         </div></div>`;
-      return $("tab-onboarding").innerHTML = wrap(inner, { next: "obFinish()", nextLabel: `${G("בואי","בוא")} נתחיל! 🚀` });
+      return $("tab-onboarding").innerHTML = wrap(inner, { next: "obFinish()", nextLabel: "ממשיכים ← 🚀" });
+    }
+    case 12: {
+      /* מסך חיבור הבנק — מיד אחרי השאלון. פשוט-פשוט-פשוט, בלי מילים טכניות */
+      const nm = ownerName();
+      const opt = (id, emoji, title, subT, handler, primary) => `
+        <button onclick="${handler}" style="display:block;width:100%;text-align:right;cursor:pointer;font-family:inherit;color:#1C1C1C;box-shadow:none;border-radius:16px;padding:16px 18px;border:${obBankChoice === id ? '2.5px solid #1C1C1C' : primary ? '2px solid #E8B400' : '1px solid var(--line)'};background:${obBankChoice === id ? '#FFD600' : primary ? '#FFF6D9' : '#fff'}">
+          <div style="font-size:17px;font-weight:800">${emoji} ${title}</div>
+          <div style="font-size:13.5px;color:#6b6b6b;margin-top:3px;font-weight:500">${subT}</div>
+        </button>`;
+      $("tab-onboarding").innerHTML = `<div class="panel" style="max-width:520px;margin:0 auto;background:var(--bg)">
+        <div style="text-align:center">${lemonSVG}
+          <h2 style="margin:10px 0 4px;color:var(--brand)">עכשיו מחברים את הבנק והאשראי 🔌</h2>
+          <p class="desc">כדי שהכל יתעדכן לבד${nm ? `, ${esc(nm)}` : ""} — בלי להקליד כלום ובלי לרדוף אחרי מספרים.</p>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
+          ${opt("connect", "💛", "חברו אותי", "מתחברים פעם אחת במחשב, ומכאן הכל מתעדכן לבד כל בוקר.", "obBank('connect')", true)}
+          ${obBankChoice === "connect" ? `<div style="background:#fff;border:1px solid var(--line);border-radius:13px;padding:13px 15px;font-size:14px;line-height:1.8">
+            עושים את זה יחד בפגישת ההקמה — או שכותבים לנו עכשיו, ואנחנו מלווים אותך צעד-צעד. פעם אחת, ומאז החיבור שלך עובד לבד. 💛
+            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+              <button class="small" onclick="openSupport()">💬 כתבו לנו — נעשה את זה יחד</button>
+              <button class="small ghost" onclick="obDone()">בינתיים לאפליקציה ←</button>
+            </div></div>` : ""}
+          ${opt("demo", "👀", "אני רוצה לראות קודם", "נראה לך הכל עם נתוני דוגמה — בלי להתחייב. אפשר לחבר מתי שבא לך.", "obDemo()", false)}
+          ${opt("manual", "✍️", "אזין ידנית בינתיים", "מוסיפים הכנסות והוצאות לבד — שתי דקות. תמיד אפשר לחבר אחר כך.", "obManual()", false)}
+        </div>
+        <div style="text-align:center;margin-top:14px"><button class="ghost small" onclick="obDone()">אחר כך — קחו אותי לאפליקציה ←</button></div>
+      </div>`;
+      return;
+    }
+    case 13: {
+      /* יצירת חשבון — הצעד האחרון לפני שנכנסים. 3 שדות, כפתור אחד, בלי דילוג. */
+      const nm = ownerName();
+      $("tab-onboarding").innerHTML = `<div class="panel" style="max-width:460px;margin:0 auto;background:var(--bg)">
+        <div style="text-align:center">${lemonSVG}
+          <h2 style="margin:10px 0 4px;color:var(--brand)">עוד שנייה וסיימנו — נשמור לך את הכניסה 🔐</h2>
+          <p class="desc" style="margin:0 0 14px">אימייל וסיסמה${nm ? `, ${esc(nm)}` : ""} — וככה הכניסה לנתונים שלך תהיה רק שלך.</p>
+          <form onsubmit="obSignup();return false" style="display:flex;flex-direction:column;gap:9px;max-width:320px;margin:0 auto">
+            <input id="obAuthEmail" type="email" placeholder="האימייל שלך" autocomplete="username" dir="ltr" style="width:100%;box-sizing:border-box;text-align:center;font-size:15.5px;padding:11px 12px">
+            <input id="obAuthPw" type="password" placeholder="סיסמה (6 תווים לפחות)" autocomplete="new-password" dir="ltr" style="width:100%;box-sizing:border-box;text-align:center;font-size:15.5px;padding:11px 12px">
+            <input id="obAuthPw2" type="password" placeholder="ועוד פעם, ליתר ביטחון 😊" autocomplete="new-password" dir="ltr" style="width:100%;box-sizing:border-box;text-align:center;font-size:15.5px;padding:11px 12px">
+            <div id="obAuthErr" style="display:none;background:#FFF6D9;border:1px solid #F0D98A;border-radius:11px;padding:10px 12px;font-size:13.5px;font-weight:700;color:#7a5c12;line-height:1.6"></div>
+            <button type="submit" id="obAuthBtn" style="font-size:15.5px;padding:12px">יוצרים חשבון ונכנסים 🍋</button>
+          </form>
+          <div style="margin-top:14px;font-size:12.5px;color:var(--muted)">הנתונים שלך שמורים אצלך במחשב 🔒</div>
+        </div>
+      </div>`;
+      return;
+    }
+    case 14: {
+      /* 💛 הרגע שלך — מסך הערך הראשון, מיד אחרי השאלון: המנוע האמיתי על המספרים שסיפרה */
+      const vm = valueMoment(p);
+      if (!vm) { obStep = 12; return renderOnboarding(); }
+      $("tab-onboarding").innerHTML = `<div style="max-width:600px;margin:0 auto">
+        <div style="text-align:center;padding:6px 0 2px">${lemonSVG}
+          <h2 style="margin:10px 0 2px;color:var(--brand)">שנייה לפני שממשיכים — ${G("תראי","תראה")} מה כבר יודעים 💛</h2>
+          <p class="desc" style="margin:0 0 12px">רק מהשאלון, בלי להקליד תנועה אחת. מכאן זה רק נהיה מדויק יותר.</p>
+        </div>
+        ${valueCardHTML(p, "ob")}
+        <div style="display:flex;justify-content:center;margin-top:4px">
+          <button onclick="obStep=12;render()" style="font-size:15px;padding:12px 22px">ממשיכים — לחבר את הבנק ← 🚀</button>
+        </div>
+      </div>`;
+      return;
+    }
   }
 }
 
@@ -1209,14 +1745,14 @@ function renderPipeline() {
 /* ========== ✅ מה לעשות — מרכז הפעולות ========== */
 function renderActions() {
   const p = P();
-  const acts = actionCenter(p);
+  const rk = rankActions(p);
   const inv = (p.investments || []);
   $("tab-actions").innerHTML = `
   <div class="panel" style="background:linear-gradient(135deg,#1C1C1C,#2E2E2E);color:#fff;border:none">
     <div style="display:flex;align-items:center;gap:14px">
       <div style="flex:1">
         <div style="font-size:12.5px;color:#FFD600">✅ מה לעשות</div>
-        <div style="font-size:18px;font-weight:700;margin-top:3px">${acts.length ? `יש לך ${acts.length} דברים שכדאי לעשות — לפי סדר חשיבות.` : "הכל מסודר כרגע — אין מה לעשות. כל הכבוד! 🎉"}</div>
+        <div style="font-size:18px;font-weight:700;margin-top:3px">${rk.all.length ? `יש לך ${rk.all.length} דברים שכדאי לעשות — בחרתי לך את הכי חשוב.` : "הכל מסודר כרגע — אין מה לעשות. כל הכבוד! 🎉"}</div>
         <div style="font-size:13px;color:#c7cfdb;margin-top:5px">אני מנהל בשבילך — ${G("את רק צריכה","אתה רק צריך")} לפעול לפי הצעדים.</div>
       </div>
       ${lemonArt("coconut")}
@@ -1230,16 +1766,35 @@ function renderActions() {
     </div>
     <button class="small ghost" style="margin-top:8px" onclick="activeTab='invest';render()">לעדכן יתרות / להוסיף חיסכון ←</button>
   </div>` : ""}
-  ${acts.map(a => `<div class="panel" style="border-right:4px solid var(--accent)">
+  ${rk.top ? `<div class="panel" style="border:2px solid #FFD600;background:#FFFDF4">
+    <div style="font-size:11.5px;font-weight:800;color:#8a7a2e;letter-spacing:.02em;margin-bottom:6px">🎯 הדבר האחד שכדאי לעשות עכשיו</div>
     <div style="display:flex;gap:11px;align-items:flex-start">
-      <span style="font-size:22px">${a.icon}</span>
+      <span style="font-size:24px">${rk.top.icon}</span>
       <div style="flex:1">
-        <div style="font-weight:700;font-size:15px">${esc(a.title)}</div>
-        <div class="small" style="color:var(--muted);margin:3px 0 ${a.steps.length ? "7px" : "0"}">${esc(a.detail)}</div>
-        ${a.steps.length ? `<ol style="margin:0;padding-inline-start:18px;font-size:13px;line-height:1.7">${a.steps.map(s => `<li>${esc(s)}</li>`).join("")}</ol>` : ""}
-        ${a.cta ? `<button class="small ghost" style="margin-top:8px" onclick="activeTab='${a.cta}';render()">${esc(a.ctaTxt)} ←</button>` : ""}
+        <div style="font-weight:800;font-size:16px">${esc(rk.top.title)}</div>
+        <div class="small" style="color:#6d5c00;font-weight:700;margin:2px 0 6px">${esc(rk.top.reason)}</div>
+        <div class="small" style="color:var(--muted);margin:0 0 ${rk.top.steps.length ? "7px" : "0"}">${esc(rk.top.detail)}</div>
+        ${rk.top.steps.length ? `<ol style="margin:0;padding-inline-start:18px;font-size:13px;line-height:1.7">${rk.top.steps.map(s => `<li>${esc(s)}</li>`).join("")}</ol>` : ""}
+        ${rk.top.cta ? `<button class="small" style="margin-top:8px" onclick="activeTab='${rk.top.cta}';render()">${esc(rk.top.ctaTxt)} ←</button>` : ""}
       </div>
-    </div></div>`).join("")}
+    </div>
+  </div>` : ""}
+  ${rk.rest.length ? `<details class="panel">
+    <summary style="cursor:pointer;font-weight:700;font-size:14px;color:var(--muted)">עוד ${rk.rest.length} ${rk.rest.length === 1 ? "דבר" : "דברים"} שכדאי לעשות</summary>
+    <div style="margin-top:10px;display:flex;flex-direction:column;gap:10px">
+      ${rk.rest.map(a => `<div style="border-right:4px solid var(--accent);border-radius:10px;background:var(--bg);padding:10px 12px">
+        <div style="display:flex;gap:11px;align-items:flex-start">
+          <span style="font-size:20px">${a.icon}</span>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:14.5px">${esc(a.title)}</div>
+            <div class="small" style="color:var(--muted);margin:3px 0 ${a.steps.length ? "7px" : "0"}">${esc(a.detail)}</div>
+            ${a.steps.length ? `<ol style="margin:0;padding-inline-start:18px;font-size:12.5px;line-height:1.6">${a.steps.map(s => `<li>${esc(s)}</li>`).join("")}</ol>` : ""}
+            ${a.cta ? `<button class="small ghost" style="margin-top:6px" onclick="activeTab='${a.cta}';render()">${esc(a.ctaTxt)} ←</button>` : ""}
+          </div>
+        </div>
+      </div>`).join("")}
+    </div>
+  </details>` : ""}
   <div class="panel" style="background:var(--brand-soft);border:none"><div class="small" style="color:#47541F">💬 בקרוב — כל אלה יגיעו ${G("אלייך","אליך")} גם כהודעות עדינות בוואטסאפ, ${G("שלא תצטרכי","שלא תצטרך")} אפילו להיכנס.</div></div>`;
 }
 
@@ -1270,6 +1825,14 @@ function renderCashflow() {
       <div class="small muted">סנכרון בנק אחרון: ${lastSync ? new Date(lastSync).toLocaleString("he-IL") : "עוד לא חובר — בינתיים מזינים ידנית"}</div></div>
     <div>${monthPicker()}</div>
   </div>
+  ${p.transactions.length === 0 ? `<div class="panel" style="border:2px solid var(--accent)">
+    <h2 style="margin:0 0 6px">✏️ הצעד הראשון: 3 ההוצאות הגדולות שלך</h2>
+    <p class="desc" style="margin:0 0 10px">עוד אין תנועות. הזנה של 30 שניות — ומיד רואים כמה יוצא, מה מוכר במס ומה נשאר. את הבנק אפשר לחבר אחר כך, והכל יתעדכן לבד.</p>
+    ${qaOpen ? quickAddHTML(p) : `<div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="qaStart()">✏️ ${G("הזיני","הזן")} 3 הוצאות — 30 שניות</button>
+      <button class="ghost small" onclick="peekDemo()">👀 ${G("הציצי","הצץ")} בדוגמה</button>
+    </div>`}
+  </div>` : (qaMsg ? `<div class="panel" style="padding:12px 16px">${qaMsgHTML()}</div>` : "")}
   <div class="cards">
     <div class="kpi good"><div class="lbl">נכנס החודש</div><div class="val">${fmt(act.income)}</div></div>
     <div class="kpi"><div class="lbl">יצא החודש</div><div class="val">${fmt(act.expense)}</div></div>
@@ -1349,7 +1912,18 @@ function addTx() {
   tagStateTaxes(P());      // אם זה תשלום למדינה — מסומן 🏛️ ולא נספר כהוצאה מוכרת
   render();
 }
-function delTx(id) { P().transactions = P().transactions.filter(t => t.id !== id); render(); }
+function delTx(id) {
+  const p = P();
+  const t = p.transactions.find(t => t.id === id);
+  if (!t) return;
+  if (t.source === "bank") {
+    // תנועת בנק שנמחקת ידנית — מצבה (deletedBankSigs), שהסנכרון הבא לא יחזיר אותה (סקירת מוכנות 22.7)
+    if (!confirm("למחוק את התנועה הזאת מהבנק? היא לא תחזור גם אחרי הסנכרון הבא.")) return;
+    tombstoneBankTx(p, t);
+  }
+  p.transactions = p.transactions.filter(x => x.id !== id);
+  render();
+}
 function setServes(id, val) { const t = P().transactions.find(t => t.id === id); if (t) t.serves = (t.serves === val ? null : val); render(); }
 function classifyTx(id, catId) {
   const p = P();
@@ -1536,14 +2110,30 @@ function renderBudgets() {
   <div class="panel" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
     <h2 style="margin:0">תקציבים — ${hebMonth(viewMonth)}</h2><div>${monthPicker()}</div>
   </div>
+  ${tot.budget === 0 && tot.spent === 0 ? `<div class="panel" style="border:2px solid var(--accent)">
+    <h2 style="margin:0 0 6px">🎈 עוד אין תקציבים — בונים בלחיצה אחת</h2>
+    <p class="desc" style="margin:0 0 10px">למטה מחכה רשימת הוצאות מוכנות: לוחצים על מה שיש לך, רושמים בערך כמה יוצא — ומכאן אני עוקב בשבילך שכל קטגוריה תישאר במסגרת.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="document.getElementById('budgetQuickChips').scrollIntoView({behavior:'smooth',block:'center'})">🍋 לבחור את ההוצאות שלי</button>
+      <button class="ghost small" onclick="peekDemo()">👀 ${G("הציצי","הצץ")} בדוגמה</button>
+    </div>
+  </div>` : ""}
   <div class="cards">
-    <div class="kpi"><div class="lbl">סך תקציב חודשי</div><div class="val">${fmt(tot.budget)}</div></div>
+    <div class="kpi"><div class="lbl">סך תקציב חודשי</div><div class="val">${fmt(tot.budget)}</div>
+      <div class="hint">🏢 עסק ${fmt(rows.filter(r => r.cat.tag === "biz").reduce((s, r) => s + (r.cat.budget || 0), 0))} · 🏠 בית ${fmt(rows.filter(r => r.cat.tag !== "biz").reduce((s, r) => s + (r.cat.budget || 0), 0))}</div></div>
     <div class="kpi ${tot.spent > tot.budget ? "bad" : ""}"><div class="lbl">נוצל החודש</div><div class="val">${fmt(tot.spent)}</div>
       <div class="hint">${tot.budget ? pct(tot.spent / tot.budget) : "—"} מהתקציב</div></div>
     <div class="kpi ${tot.budget - tot.spent >= 0 ? "good" : "bad"}"><div class="lbl">נשאר</div><div class="val">${fmt(tot.budget - tot.spent)}</div></div>
   </div>
 
   ${(function(){
+    // מוצג רק כשיעד החופש הוגדר במודע ויש לפחות חודש מלא של נתונים — לא מטיפים על חלום שלא נבחר (סקירת מוכנות 22.7)
+    if (!freedomGoalSet(p)) return "";
+    const hasFullMonth = [1, 2, 3].some(i => {
+      const d = new Date(); d.setMonth(d.getMonth() - i);
+      return actualsForMonth(p, d.toISOString().slice(0, 7)).count >= 10;
+    });
+    if (!hasFullMonth) return "";
     const adv = budgetAdvice(p);
     if (!adv || adv.needMonthly <= 0) return "";
     return `<div class="panel" style="border-right:4px solid var(--accent)">
@@ -1592,42 +2182,70 @@ function renderBudgets() {
   </div>`; })()}
   <div class="panel"><div class="scrollX"><table>
     <tr><th>קטגוריה</th><th>סוג</th><th>תקציב</th><th>נוצל</th><th>נשאר</th><th>%</th><th style="width:160px">מצב</th><th></th></tr>
-    ${rows.map(r => `<tr>
+    ${[{ tag: "biz", label: "🏢 העסק" }, { tag: "personal", label: "🏠 הבית" }].map(grp => {
+      const grows = rows.filter(r => (r.cat.tag === "biz") === (grp.tag === "biz"));
+      if (!grows.length) return "";
+      const gb = grows.reduce((s, r) => s + (r.cat.budget || 0), 0), gs = grows.reduce((s, r) => s + r.spent, 0);
+      return `<tr><td colspan="8" style="background:${grp.tag === "biz" ? "#FFF6D9" : "#EFF3E4"};font-weight:800;font-size:14px;padding:9px 12px">${grp.label}
+        <span class="small" style="font-weight:600;color:#6b6b6b">· תקציב ${fmt(gb)} · נוצל ${fmt(gs)} · נשאר ${fmt(gb - gs)}</span></td></tr>` +
+      grows.map(r => `<tr>
       <td><input type="text" value="${esc(r.cat.name)}" onchange="updCat('${r.cat.id}','name',this.value)">
         ${r.cat.deductible
           ? `<div class="small" style="color:var(--accent);margin-top:4px;cursor:pointer" title="לחצי להסרה" onclick="updCat('${r.cat.id}','deductible',false)">💡 מוכר במס — לבדוק עם רו"ח</div>`
           : `<div class="small muted" style="margin-top:4px;cursor:pointer" onclick="updCat('${r.cat.id}','deductible',true)">+ סמני כמוכר במס</div>`}
         <input type="text" value="${esc((r.cat.keywords || []).join(", "))}" placeholder="מילות זיהוי למיון אוטומטי (בפסיקים)" onchange="updCatKeywords('${r.cat.id}', this.value)" style="width:100%;font-size:11.5px;padding:4px 8px;margin-top:5px"></td>
       <td><select onchange="updCat('${r.cat.id}','tag',this.value)">
-        <option value="personal" ${r.cat.tag === "personal" ? "selected" : ""}>אישי</option>
-        <option value="biz" ${r.cat.tag === "biz" ? "selected" : ""}>עסקי</option></select></td>
+        <option value="personal" ${r.cat.tag === "personal" ? "selected" : ""}>🏠 בית</option>
+        <option value="biz" ${r.cat.tag === "biz" ? "selected" : ""}>🏢 עסק</option></select></td>
       <td><input type="number" value="${r.cat.budget || 0}" onchange="updCat('${r.cat.id}','budget',Number(this.value))"></td>
       <td class="num">${fmt(r.spent)}</td>
       <td class="num ${r.remaining >= 0 ? "" : "neg"}">${fmt(r.remaining)}</td>
       <td class="num"><b>${r.cat.budget ? pct(r.used) : "—"}</b></td>
       <td><div class="budgetBar"><i class="${r.level}" style="width:${Math.min(100, r.used * 100)}%"></i></div></td>
       <td style="white-space:nowrap"><button class="ghost small" onclick="toggleBudgetCat('${r.cat.id}')" title="מה היו ההוצאות">🔍</button><button class="danger small" onclick="delCat('${r.cat.id}')">✕</button></td>
-    </tr>${budgetOpenCat === r.cat.id ? budgetDrillRow(p, r.cat) : ""}`).join("")}
+    </tr>${budgetOpenCat === r.cat.id ? budgetDrillRow(p, r.cat) : ""}`).join("");
+    }).join("")}
     <tr class="totalRow"><td>סה"כ</td><td></td><td class="num">${fmt(tot.budget)}</td>
       <td class="num">${fmt(tot.spent)}</td><td class="num">${fmt(tot.budget - tot.spent)}</td>
       <td class="num">${tot.budget ? pct(tot.spent / tot.budget) : "—"}</td><td></td><td></td></tr>
   </table></div>
   <div class="addLine">
     <div><label>קטגוריה חדשה</label><input type="text" id="newCatName" placeholder="שם"></div>
-    <div><label>סוג</label><select id="newCatTag"><option value="personal">אישי</option><option value="biz">עסקי</option></select></div>
+    <div><label>סוג</label><select id="newCatTag"><option value="personal">🏠 בית</option><option value="biz">🏢 עסק</option></select></div>
     <div><label>תקציב חודשי</label><input type="number" id="newCatBudget" value="500"></div>
     <button onclick="addCat()">+ הוספה</button>
   </div>
-  <div style="margin-top:8px"><span class="small muted">הוספה מהירה: </span>
-    ${[["בילויים ויציאות",600],["נסיעות וחופשות",800],["בריאות וכושר",400],["חינוך והתפתחות",500],["מתנות",300],["ביגוד",400]]
-      .map(c=>`<button class="ghost small" onclick="addCatQuick('${c[0]}',${c[1]})">+ ${c[0]}</button>`).join(" ")}
-  </div>
+  ${(function(){
+    /* הוספה מהירה בצ'יפים — אותם צ'יפים כמו בשאלון: צהוב = כבר קיים אצלך; חדש = נפתח עם דגלי המס הנכונים */
+    const chipRow = key => EXPENSE_CHIPS[key].map((def, i) => {
+      const nm = def.match || def.label;
+      const c = p.categories.find(x => x.name === nm);
+      const on = !!c;
+      return `<span style="display:inline-flex;align-items:center;gap:5px">
+        <button onclick="budgetChipToggle('${key}',${i})" style="color:#1C1C1C;box-shadow:none;border:${on ? '2px solid #1C1C1C' : '1px solid var(--line)'};background:${on ? '#FFD600' : '#fff'};border-radius:999px;padding:7px 12px;font-family:inherit;font-size:12.5px;font-weight:${on ? '800' : '600'};cursor:pointer">${on ? '✓ ' : '+ '}${esc(def.label)}</button>
+        ${on && !(c.budget > 0) ? `<input type="number" placeholder="₪ לחודש" onchange="updCat('${c.id}','budget',Number(this.value)||0)" style="width:88px;font-size:12px;padding:5px 8px">` : ""}
+      </span>`;
+    }).join("");
+    return `<div id="budgetQuickChips" style="margin-top:10px">
+      <div style="font-weight:800;font-size:13.5px;margin-bottom:7px">הוספה מהירה — לוחצים על מה שיש 🍋</div>
+      <div class="small muted" style="margin-bottom:5px">🏢 העסק</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px">${chipRow("biz")}</div>
+      <div class="small muted" style="margin-bottom:5px">🏠 הבית</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${chipRow("personal")}</div>
+    </div>`;
+  })()}
   <div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)">
     <button class="ghost small" onclick="runAutoClassify()">✨ מיין תנועות אוטומטית</button>
     <div class="small muted" style="margin-top:6px">טיפ: הוסיפי לכל קטגוריה "מילות זיהוי" (למשל לקטגוריית מס: <b>מס הכנסה, מע"מ, ביטוח לאומי</b>) — והמערכת תמיין את התנועות אליהן לבד, בלי שתצטרכי לבחור כל אחת.</div>
   </div></div>`;
 }
-function updCat(id, key, val) { const c = P().categories.find(c => c.id === id); if (c) { c[key] = val; if (key === "tag") c.vatDeductible = val === "biz"; } render(); }
+/* קביעת/שינוי תקציב מתויגת בחודש הנוכחי (budgetSetMonth) — "חודש קיבוץ" לפני שהתראות תקציב מתחילות
+   (סקירת QA 23.7: לקוחה חדשה שקבעה תקציב בשאלון ומיד רשמה הוצאה תואמת קיבלה 3 נזיפות כתומות תוך שניות) */
+function updCat(id, key, val) {
+  const c = P().categories.find(c => c.id === id);
+  if (c) { c[key] = val; if (key === "tag") c.vatDeductible = val === "biz"; if (key === "budget") c.budgetSetMonth = thisMonth(); }
+  render();
+}
 function updCatKeywords(id, str) {
   const c = P().categories.find(c => c.id === id);
   if (c) { c.keywords = str.split(",").map(s => s.trim()).filter(Boolean); autoClassify(P()); }
@@ -1647,13 +2265,13 @@ function delCat(id) {
 function addCat() {
   const name = $("newCatName").value.trim(); if (!name) return;
   P().categories.push({ id: uid(), name, tag: $("newCatTag").value,
-    budget: Number($("newCatBudget").value) || 0, vatDeductible: $("newCatTag").value === "biz" });
+    budget: Number($("newCatBudget").value) || 0, vatDeductible: $("newCatTag").value === "biz", budgetSetMonth: thisMonth() });
   render();
 }
 function addCatQuick(name, budget) {
   const p = P();
   if (p.categories.some(c => c.name === name)) { activeTab = "budgets"; render(); return; }
-  p.categories.push({ id: uid(), name, tag: "personal", budget: Number(budget) || 0, vatDeductible: false, keywords: [] });
+  p.categories.push({ id: uid(), name, tag: "personal", budget: Number(budget) || 0, vatDeductible: false, keywords: [], budgetSetMonth: thisMonth() });
   save(); render();
 }
 
@@ -1719,7 +2337,37 @@ function renderAccountant() {
       ${r.deductibleList.map(d => `<tr><td class="num">${d.date}</td><td>${esc(d.desc)}</td><td>${esc(d.cat)}</td><td class="num neg">${fmt(d.amount)}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">אין הוצאות שסומנו "מוכר במס" החודש</td></tr>`}
     </table></div>
   </div>
+  ${vatDocPanelHTML(p, accBi ? period : [viewMonth])}
   <div class="panel" style="background:var(--brand-soft)"><p style="margin:0;font-size:12.5px;line-height:1.6">🔒 זו רשימה מסייעת — ההגשה והאישור הסופיים מול רואה החשבון.</p></div>`;
+}
+
+/* 🔍 לבדיקת תשומות: חיובי חו"ל בלי חשבונית מס ישראלית ודאית — לא קיזזנו עליהם מע"מ.
+   סימון "יש מסמך מס תקף" מחזיר את הקיזוז; ההוצאה מוכרת למס הכנסה בכל מקרה. */
+function vatDocPanelHTML(p, months) {
+  const review = vatDocReview(p, months);
+  const marked = vatDocMarkedYes(p, months);
+  if (!review.length && !marked.length) return "";
+  const catName = id => { const c = p.categories.find(c => c.id === id); return c ? c.name : ""; };
+  return `<div class="panel">
+    <h2>🔍 לבדיקת תשומות — חיובי חו"ל</h2>
+    <p class="desc">על החיובים האלה לא קיזזנו מע"מ תשומות, כי בדרך כלל אין עליהם חשבונית מס ישראלית (מנויים מחו"ל).
+      ההוצאה עדיין מוכרת במס הכנסה. אם יש לך חשבונית מס תקפה — סמני, והקיזוז יחזור. שווה לצרף את הרשימה לרו"ח.</p>
+    ${review.length ? `<div class="scrollX"><table>
+      <tr><th>תאריך</th><th>תיאור</th><th>קטגוריה</th><th>סכום</th><th></th></tr>
+      ${review.map(t => `<tr><td class="num">${t.date}</td><td>🔍 ${esc(t.desc)}</td><td>${esc(catName(t.categoryId))}</td>
+        <td class="num neg">${fmt(Math.abs(t.amount))}</td>
+        <td><button class="small ghost" onclick="vatDocMark('${t.id}','yes')">✓ יש מסמך מס תקף</button></td></tr>`).join("")}
+    </table></div>` : ""}
+    ${marked.length ? `<div class="small muted" style="margin-top:8px">סומנו עם מסמך מס (המע"מ מקוזז):
+      ${marked.map(t => `<div>✓ ${t.date} · ${esc(t.desc)} · ${fmt(Math.abs(t.amount))}
+        <span style="color:var(--accent);cursor:pointer" onclick="vatDocMark('${t.id}',null)">↩ החזרה לבדיקה</span></div>`).join("")}</div>` : ""}
+  </div>`;
+}
+function vatDocMark(txId, val) {
+  const t = P().transactions.find(x => x.id === txId);
+  if (!t) return;
+  if (val) t.vatDoc = val; else delete t.vatDoc;
+  save(); render();
 }
 function exportAccountantCSV() {
   const p = P();
@@ -1779,7 +2427,7 @@ function mikdamotPanel(p) {
   // נוסח מוכן לרו"ח — לפי הכיוון של הפער
   const callText = mk.level === "over"
     ? `היי, לפי המעקב שלי לתקופת ${perLabel}: המחזור נטו ממע"מ היה בערך ${R(mk.netIncome)}, ההוצאות המוכרות בערך ${R(mk.netDed)}, כלומר רווח של בערך ${R(mk.profit)}. המס שנצבר לפי המדרגות הוא בערך ${R(mk.accrued)} (מס הכנסה + ביטוח לאומי), ובפועל שילמתי ${R(mk.paid)} — כלומר שילמתי מראש בערך ${R(Math.abs(mk.gap))} יותר. האם אפשר להגיש בקשה להקטנת המקדמות? תודה!`
-    : `היי, לפי המעקב שלי לתקופת ${perLabel}: המחזור נטו ממע"מ היה בערך ${R(mk.netIncome)}, ההוצאות המוכרות בערך ${R(mk.netDed)}, כלומר רווח של בערך ${R(mk.profit)}. המס שנצבר לפי המדרגות הוא בערך ${R(mk.accrued)} (מס הכנסה + ביטוח לאומי), ובפועל שילמתי מקדמות של ${R(mk.paid)}${mk.rate > 0 ? ` (הקביעה הנוכחית: ${(mk.rate * 100).toLocaleString("he-IL", { maximumFractionDigits: 1 })}% מהמחזור)` : ""}. האם כדאי לעדכן את המקדמות כדי שלא יצטבר לי חוב בשומה השנתית? ואם לא — כמה כדאי לי לשים בצד כל חודש? תודה!`;
+    : `היי, לפי המעקב שלי לתקופת ${perLabel}: המחזור נטו ממע"מ היה בערך ${R(mk.netIncome)}, ההוצאות המוכרות בערך ${R(mk.netDed)}, כלומר רווח של בערך ${R(mk.profit)}. המס שנצבר לפי המדרגות הוא בערך ${R(mk.accrued)} (מס הכנסה + ביטוח לאומי), ובפועל שילמתי מקדמות של ${R(mk.paid)}${mk.rate > 0 ? ` (${mk.rateInferred ? "לפי מה שזיהיתי בחשבון" : "הקביעה הנוכחית"}: ${(mk.rate * 100).toLocaleString("he-IL", { maximumFractionDigits: 1 })}% מהמחזור)` : ""}. האם כדאי לעדכן את המקדמות כדי שלא יצטבר לי חוב בשומה השנתית? ואם לא — כמה כדאי לי לשים בצד כל חודש? תודה!`;
   return `<div class="panel" style="border-right:4px solid var(--accent)">
     <h2>🏛️ יועץ המקדמות — ${perLabel}</h2>
     <p class="desc">מקדמות המס הן "תשלום על החשבון" — בסוף השנה משלמים את האמת. כאן רואים אם מה ששולם מתאים למה שבאמת נצבר, לפני שזה מפתיע.</p>
@@ -1790,7 +2438,14 @@ function mikdamotPanel(p) {
         <div class="hint">מס הכנסה ${R(mk.accruedIt)} · ביטוח לאומי ${R(mk.accruedBl)}</div></div>
     </div>
     <div style="background:${tone.bg};border:1px solid ${tone.br};border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.7;color:${tone.fg}">${tone.ic} ${verdict}</div>
-    ${mk.rate > 0 ? `<div class="small muted" style="margin-top:7px">לפי הקביעה שלך (${(mk.rate * 100).toLocaleString("he-IL", { maximumFractionDigits: 1 })}% מהמחזור${mk.freq === "m" ? ", חודשי" : ", דו-חודשי"}) — המקדמה לתקופה הזאת ≈ <b>${R(mk.expectedMikdama)}</b>.</div>` : ""}
+    ${(function(){
+      // אמת מול ניחוש (סקירת מוכנות 22.7): אחוז שזוהה מהבנק מוצג כזיהוי — לא כ"קביעה שלך"
+      const ratePct = (mk.rate * 100).toLocaleString("he-IL", { maximumFractionDigits: 1 });
+      const freqTxt = mk.freq === "m" ? ", חודשי" : ", דו-חודשי";
+      if (mk.rate > 0 && mk.rateInferred) return `<div class="small muted" style="margin-top:7px">זיהינו מהבנק בערך ${ratePct}% מהמחזור${freqTxt} — כדאי לאמת מול מכתב הקביעה. לפי זה, המקדמה לתקופה הזאת ≈ <b>${R(mk.expectedMikdama)}</b>.</div>`;
+      if (mk.rate > 0) return `<div class="small muted" style="margin-top:7px">לפי הקביעה שלך (${ratePct}% מהמחזור${freqTxt}) — המקדמה לתקופה הזאת ≈ <b>${R(mk.expectedMikdama)}</b>.</div>`;
+      return `<div class="small muted" style="margin-top:7px">עוד לא זיהינו תשלומי מקדמות בחשבון — ברגע שירד תשלום לרשות המסים נזהה את האחוז לבד. אפשר גם להזין את הקביעה בהגדרות.</div>`;
+    })()}
     <div style="margin-top:9px">
       <button class="small" onclick="mkToggleCall()">📞 מה לשאול את הרו"ח</button>
       ${mkShowCall ? `<div style="margin-top:8px">
@@ -1857,6 +2512,7 @@ function renderTaxPlan() {
         <div style="font-size:13px;color:var(--muted)">🏛️ כמה מס הולך לרדת</div>
         <div style="font-size:30px;font-weight:800;margin:3px 0">${fmt(Math.round(vatDue))}</div>
         <div class="small">מע"מ לתקופת ${hebMonth(period[0])}–${hebMonth(period[1])} (אחרי קיזוז ${fmt(Math.round(vatIn))} תשומות)</div>
+        ${(function(){ const rv = vatDocReview(p, period); return rv.length ? `<div class="small" style="margin-top:3px">🔍 ${rv.length} חיובי חו"ל בלי קיזוז תשומות (אין חשבונית מס ישראלית) — <span style="cursor:pointer;text-decoration:underline" onclick="activeTab='accountant';render()">לבדיקה בדוח לרו"ח ←</span></div>` : ""; })()}
         <div class="small muted" style="margin-top:3px">+ מס הכנסה וביטוח לאומי: ~${fmt(Math.round(iaNow.taxNi))} לחודש בצד</div>
       </div>
       <div class="panel" style="margin:0;border-right:5px solid var(--green);background:#F3FBF5">
@@ -1985,10 +2641,24 @@ function renderIncome() {
   const gapNow = plan[0] ? plan[0].gap : 0;
 
   $("tab-income").innerHTML = `
+  ${(function(){
+    if (p.clients.length) return "";
+    const aQ = (p.onboarding && p.onboarding.answers) || {};
+    const hint = aQ.clientsCount > 0 && aQ.avgPerClient > 0
+      ? `בשאלון סיפרת על בערך <b>${aQ.clientsCount} לקוחות בכ-${fmt(aQ.avgPerClient)} לחודש</b> — נוסיף אותם כאן בשמות, וכל תחזית (הכנסה, מס, יעד) תתחדד.`
+      : `מוסיפים כל לקוח פעם אחת — ומכאן אני עוקב: כמה נכנס, מתי ליווי מסתיים, וכמה לקוחות חסרים ליעד שלך.`;
+    return `<div class="panel" style="border:2px solid var(--accent)">
+      <h2 style="margin:0 0 6px">👥 נתחיל מהלקוח הראשון שלך</h2>
+      <p class="desc" style="margin:0 0 10px">${hint}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="var e=document.getElementById('clName');e.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(function(){e.focus()},350)">➕ ${G("הוסיפי","הוסף")} את הלקוח הראשון</button>
+        <button class="ghost small" onclick="peekDemo()">👀 ${G("הציצי","הצץ")} בדוגמה</button>
+      </div>
+    </div>`; })()}
   <div class="cards">
     <div class="kpi"><div class="lbl">לקוחות פעילים</div><div class="val">${activeClients.length}</div></div>
     <div class="kpi"><div class="lbl">הכנסה חודשית מליווי</div><div class="val">${fmt(monthlyNow)}</div>
-      <div class="hint">יעד: ${fmt(goal)}</div></div>
+      <div class="hint">יעד: ${fmt(goal)}${p.settings.goalAuto ? " (ברירת מחדל — אפשר לשנות בהגדרות)" : ""}</div></div>
     <div class="kpi good"><div class="lbl">צבר תשלומים עתידי</div><div class="val">${fmt(remainingTotal)}</div>
       <div class="hint">כל התשלומים שנשארו מכל הלקוחות</div></div>
   </div>
@@ -2097,14 +2767,27 @@ function renderIncome() {
   <div class="panel">
     <h2>הלקוחות שלי</h2>
     <p class="desc">לכל לקוח: כמה תשלומים חודשיים נשארו קדימה. המערכת פורסת אוטומטית את ההכנסה על החודשים הבאים.${p.products.length ? " ועכשיו — גם על איזה מוצר/שירות כל לקוח, כדי לראות רווחיות לכל מוצר." : ""}</p>
-    <div class="scrollX"><table>
-      <tr><th>שם</th><th>מחיר חודשי</th>${p.products.length ? "<th>מוצר / שירות</th>" : ""}<th>תשלומים שנשארו</th><th>חודש התחלה (ללקוח עתידי)</th><th>סה"כ צפוי</th><th>נגמר ב…</th><th></th></tr>
+    ${(function(){
+      // רשימת לקוחות ריקה אבל בשאלון הוצהרו לקוחות×ממוצע — מזכירים מאיפה המספרים ומה הצעד (סקירת מוכנות 22.7)
+      const aQ = (p.onboarding && p.onboarding.answers) || {};
+      if (p.clients.length || !(aQ.clientsCount > 0 && aQ.avgPerClient > 0)) return "";
+      return `<div style="background:#FFF6D9;border:1px solid #F0D98A;border-radius:11px;padding:10px 13px;margin-bottom:10px;font-size:13.5px;color:#7a5c12">💛 לפי השאלון: ~${aQ.clientsCount} לקוחות בכ-${fmt(aQ.avgPerClient)} לחודש — כדאי להוסיף אותם כאן בשמות, וכל התחזיות יתחדדו.</div>`;
+    })()}
+    ${(function(){
+      const isVatBiz = p.settings.bizType === "morasheh" || p.settings.bizType === "baam";
+      const cols = (p.products.length ? 7 : 6) + (isVatBiz ? 1 : 0) + 1;
+      return `<div class="scrollX"><table>
+      <tr><th>שם</th><th>מחיר חודשי</th>${isVatBiz ? `<th title="אם המחיר שהלקוח משלם כבר כולל מע&quot;מ — נפריד אותו לפני חישובי הרווח והמס">המחיר כולל מע"מ?</th>` : ""}${p.products.length ? "<th>מוצר / שירות</th>" : ""}<th>תשלומים שנשארו</th><th>חודש התחלה (ללקוח עתידי)</th><th>סה"כ צפוי</th><th>נגמר ב…</th><th></th></tr>
       ${p.clients.map(c => {
         const start = c.startMonth && c.startMonth > thisMonth() ? c.startMonth : thisMonth();
         const endMonth = (c.paymentsLeft || 0) > 0 ? addMonths(start, c.paymentsLeft - 1) : null;
         return `<tr>
         <td><input type="text" value="${esc(c.name)}" onchange="updClient('${c.id}','name',this.value)"></td>
         <td><input type="number" value="${c.monthlyFee || 0}" onchange="updClient('${c.id}','monthlyFee',Number(this.value))"></td>
+        ${isVatBiz ? `<td><select onchange="updClient('${c.id}','vatInclusive',this.value==='1')">
+          <option value="0" ${c.vatInclusive === true ? "" : "selected"}>לא — לפני מע"מ</option>
+          <option value="1" ${c.vatInclusive === true ? "selected" : ""}>כן — כולל מע"מ</option>
+        </select></td>` : ""}
         ${p.products.length ? `<td><select onchange="updClient('${c.id}','productId',this.value||null)">
           <option value="">—</option>
           ${p.products.map(pr => `<option value="${pr.id}" ${c.productId === pr.id ? "selected" : ""}>${esc(pr.name)}</option>`).join("")}
@@ -2114,11 +2797,11 @@ function renderIncome() {
         <td class="num">${fmt((c.monthlyFee || 0) * (c.paymentsLeft || 0))}</td>
         <td>${endMonth ? hebMonth(endMonth) : '<span class="muted">הסתיים</span>'}</td>
         <td><button class="danger small" onclick="delClient('${c.id}')">✕</button></td></tr>`;
-      }).join("") || `<tr><td colspan="${p.products.length ? 8 : 7}" class="muted">עוד אין לקוחות — מוסיפים למטה</td></tr>`}
-    </table></div>
+      }).join("") || `<tr><td colspan="${cols}" class="muted">עוד אין לקוחות — מוסיפים למטה</td></tr>`}
+    </table></div>`; })()}
     <div class="addLine">
       <div><label>שם</label><input type="text" id="clName" placeholder="לקוחה חדשה"></div>
-      <div><label>מחיר חודשי</label><input type="number" id="clFee" value="4000"></div>
+      <div><label>מחיר חודשי</label><input type="number" id="clFee" value="${((p.onboarding || {}).answers || {}).avgPerClient || 4000}"></div>
       <div><label>תשלומים</label><input type="number" id="clPayments" value="12"></div>
       <button onclick="addClient()">+ הוספה</button>
     </div>
@@ -2334,7 +3017,7 @@ function renderPlan() {
 
   $("tab-plan").innerHTML = `
   <div class="panel" style="background:var(--brand-soft);border:none;padding:10px 15px">
-    <div class="small" style="color:#47541F">🔮 <b>תכנון קדימה — תחזית</b> לפי טבלת הלקוחות, ההתחייבויות והתקציבים שהגדרת (לא כסף שנכנס בפועל).</div>
+    <div class="small" style="color:#47541F">🔮 <b>החודשים הבאים — תחזית</b> לפי טבלת הלקוחות, ההתחייבויות והתקציבים שהגדרת (לא כסף שנכנס בפועל).</div>
   </div>
   <div class="cards">
     <div class="kpi"><div class="lbl">התחייבויות החודש</div><div class="val">${fmt(monthlyNow)}</div></div>
@@ -2637,6 +3320,7 @@ function delDeposit(invId,depId){const inv=P().investments.find(i=>i.id===invId)
 /* ========== 9. תוכנית חופש כלכלי ========== */
 function renderFreedom() {
   const p = P(), fp = p.freedomPlan;
+  const goalSet = freedomGoalSet(p);
   const goal = freedomNumber(fp);
   const proj = projectFreedom(fp, 25);
   const reachYear = freedomReachYear(fp);
@@ -2650,7 +3334,24 @@ function renderFreedom() {
   const fc = buildForecast(p);
   const monthlyNetNow = fc.tax.net / 12;
 
-  $("tab-freedom").innerHTML = `
+  /* יעד שלא הוגדר במודע → מצב ריק כן, מספר בדוי לא (QA 23.7: "12,000,000" הוצג כאילו זה היעד
+     של המשתמשת, ותוכנית שלמה — קצב חיסכון, שנת יעד, גרף — נבנתה מסביב למספר שאף אחת לא בחרה) */
+  $("tab-freedom").innerHTML = !goalSet ? `
+  <div class="panel" style="background:linear-gradient(135deg,#1C1C1C,#2E2E2E);color:#fff">
+    <h2 style="color:#FFD600">🎯 מספר החופש שלך</h2>
+    <p style="color:#f4e9c1;margin:10px 0 0;font-size:15px;font-weight:700">עוד לא הגדרת את יעד החופש — נגדיר כשתרצי 💛</p>
+    <p style="color:#cbd5e1;margin:8px 0 0;font-size:13.5px;line-height:1.6">כמה בחודש היה עושה לך חיים טובים בלי לעבוד, בלי לגעת בקרן? מזה נגזר המספר — לא ממציאים אותו במקומך.</p>
+    <button class="small" style="margin-top:12px;background:#FFD600;color:#1C1C1C;border:none" onclick="var e=document.getElementById('fpAnnualTarget');e.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(function(){e.focus()},350)">💛 להגדיר את היעד שלי</button>
+  </div>
+  <div class="panel">
+    <h2>ההנחות שלך — כאן ${G("קובעת","קובע")} ${G("את","אתה")}</h2>
+    <div class="formGrid">
+      <div><label>יעד הוצאות שנתי בחיים שבחלום (₪)</label><input id="fpAnnualTarget" type="number" value="${fp.annualSpendTarget || ""}" placeholder="למשל 180,000" onchange="FP('annualSpendTarget',this.value)"></div>
+      <div><label>שיעור משיכה בטוח</label><input type="number" step="0.005" value="${fp.withdrawalRate}" onchange="FP('withdrawalRate',this.value)"></div>
+      <div><label>מה צברת היום (₪)</label><input type="number" value="${fp.currentNetWorth}" onchange="FP('currentNetWorth',this.value)">${fp.currentNetWorth > 0 ? `<div class="small muted" style="margin-top:3px">= ${fmt(fp.currentNetWorth)}</div>` : ""}</div>
+    </div>
+  </div>
+  ` : `
   <div class="panel" style="background:linear-gradient(135deg,#1C1C1C,#2E2E2E);color:#fff">
     <h2 style="color:#FFD600">🎯 מספר החופש שלך</h2>
     <div style="font-size:40px;font-weight:800;margin:6px 0;color:#FFD600">${fmt(goal)}</div>
@@ -2698,10 +3399,10 @@ function renderFreedom() {
     <div class="panel">
       <h2>ההנחות שלך — ${G("שני בהן ותראי","שנה בהן ותראה")} מה קורה</h2>
       <div class="formGrid">
-        <div><label>יעד הוצאות שנתי בחיים שבחלום (₪)</label><input type="number" value="${fp.annualSpendTarget}" onchange="FP('annualSpendTarget',this.value)"></div>
+        <div><label>יעד הוצאות שנתי בחיים שבחלום (₪)</label><input id="fpAnnualTarget" type="number" value="${fp.annualSpendTarget}" onchange="FP('annualSpendTarget',this.value)">${fp.annualSpendTarget > 0 ? `<div class="small muted" style="margin-top:3px">= ${fmt(fp.annualSpendTarget)} בשנה (${fmt(Math.round(fp.annualSpendTarget / 12))} בחודש)</div>` : ""}</div>
         <div><label>שיעור משיכה בטוח</label><input type="number" step="0.005" value="${fp.withdrawalRate}" onchange="FP('withdrawalRate',this.value)"></div>
-        <div><label>מה צברת היום (₪)</label><input type="number" value="${fp.currentNetWorth}" onchange="FP('currentNetWorth',this.value)"></div>
-        <div><label>הון פתיחה (₪)</label><input type="number" value="${fp.seedCapital}" onchange="FP('seedCapital',this.value)"></div>
+        <div><label>מה צברת היום (₪)</label><input type="number" value="${fp.currentNetWorth}" onchange="FP('currentNetWorth',this.value)">${fp.currentNetWorth > 0 ? `<div class="small muted" style="margin-top:3px">= ${fmt(fp.currentNetWorth)}</div>` : ""}</div>
+        <div><label>הון פתיחה (₪)</label><input type="number" value="${fp.seedCapital}" onchange="FP('seedCapital',this.value)">${fp.seedCapital > 0 ? `<div class="small muted" style="margin-top:3px">= ${fmt(fp.seedCapital)}</div>` : ""}</div>
         <div><label>שנת הזרקת הון הפתיחה</label><input type="number" value="${fp.seedYear}" onchange="FP('seedYear',this.value)"></div>
         <div><label>שנת התחלת השקעה שוטפת</label><input type="number" value="${fp.startYear}" onchange="FP('startYear',this.value)"></div>
         <div><label>השקעה חודשית בהתחלה (₪)</label><input type="number" value="${fp.startMonthly}" onchange="FP('startMonthly',this.value)"></div>
@@ -2718,8 +3419,9 @@ function renderFreedom() {
       </table></div>
       <p class="small muted">המספרים גבוהים כי המטרה ענקית. בפועל לא משקיעים סכום קבוע — מתחילים נמוך וגדלים עם העסק (זה מה שהגרף למעלה מראה).</p>
     </div>
-  </div>
+  </div>`;
 
+  $("tab-freedom").innerHTML += `
   <div class="panel">
     <h2>שלבי הדרך</h2>
     <p class="desc">התוכנית היא תוכנית צמיחת עסק, לא רק חיסכון. כל שלב מזין את הבא.</p>
@@ -2745,7 +3447,12 @@ function renderFreedom() {
     </ol>
   </div>`;
 }
-function FP(key, val) { P().freedomPlan[key] = Number(val); render(); }
+function FP(key, val) {
+  P().freedomPlan[key] = Number(val);
+  // עריכה ידנית של יעד ההוצאות = יעד שנבחר במודע — מרגע זה מציגים את החלום בבית (freedomGoalSet)
+  if (key === "annualSpendTarget") P().freedomPlan.userSet = true;
+  render();
+}
 function toggleMilestone(idx) { const m = P().freedomPlan.milestones[idx]; if (m) m.done = !m.done; render(); }
 function addMilestone() {
   const t = $("msTitle").value.trim(); if (!t) return;
@@ -2756,7 +3463,21 @@ function addMilestone() {
 /* ========== 8. הגדרות ========== */
 function renderSettings() {
   const p = P(), s = p.settings, tp = s.taxParams;
-  $("tab-settings").innerHTML = `
+  const authRow = authHasCreds()
+    ? `<div class="panel">
+        <h2>🔐 הכניסה שלך</h2>
+        <p class="desc">${G("מחוברת","מחובר")} עם <b dir="ltr">${esc((authRec() || {}).email || "")}</b>. הנתונים שלך שמורים אצלך במחשב — הסיסמה עצמה לא נשמרת בשום מקום.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="ghost small" onclick="authLogout()">התנתקות 🔒</button>
+          <button class="ghost small" onclick="authEndSession();authShowLock('reset')">החלפת סיסמה</button>
+        </div>
+      </div>`
+    : `<div class="panel">
+        <h2>🔐 כניסה לאפליקציה</h2>
+        <p class="desc">עוד לא הגדרנו לך כניסה. אימייל וסיסמה — וככה הכניסה לנתונים שלך במחשב הזה תהיה רק שלך.</p>
+        <button class="small" onclick="authShowLock('setup')">להגדיר כניסה עכשיו 🍋</button>
+      </div>`;
+  $("tab-settings").innerHTML = authRow + `
   <div class="panel">
     <h2>העסק והתיק</h2>
     <div class="formGrid">
@@ -2773,7 +3494,7 @@ function renderSettings() {
   <div class="panel">
     <h2>יעדים</h2>
     <div class="formGrid">
-      <div><label>יעד הכנסה עסקית לחודש (₪, לפני מע"מ)</label><input type="number" value="${s.goalMonthlyIncome}" onchange="P().settings.goalMonthlyIncome=Number(this.value);render()"></div>
+      <div><label>יעד הכנסה עסקית לחודש (₪, לפני מע"מ)</label><input type="number" value="${s.goalMonthlyIncome}" onchange="P().settings.goalMonthlyIncome=Number(this.value);P().settings.goalAuto=false;render()">${s.goalMonthlyIncome > 0 ? `<div class="small muted" style="margin-top:3px">= ${fmt(s.goalMonthlyIncome)}${s.goalAuto ? " · ברירת מחדל שנגזרה מהשאלון" : ""}</div>` : ""}</div>
       <div><label>יעד חיסכון חודשי (₪)</label><input type="number" value="${s.goalMonthlySavings}" onchange="P().settings.goalMonthlySavings=Number(this.value);render()"></div>
       <div><label>שלם לעצמך קודם (% מהנטו)</label><input type="number" min="0" max="100" value="${Math.round((s.payYourselfRate!=null?s.payYourselfRate:0.10)*100)}" onchange="P().settings.payYourselfRate=Math.max(0,Math.min(1,Number(this.value)/100));render()"></div>
       <div><label>משך ליווי ממוצע (חודשים, ל-LTV)</label><input type="number" value="${s.avgEngagementMonths}" onchange="P().settings.avgEngagementMonths=Number(this.value);render()"></div>
@@ -2806,6 +3527,20 @@ function renderSettings() {
       <div><label>סף ב"ל חודשי (60% שכר ממוצע)</label><input type="number" value="${tp.blThresholdMonthly}" onchange="TP('blThresholdMonthly',this.value)"></div>
     </div>
   </div>
+  ${(function(){
+    // 🛟 שחזור חירום (סקירת מוכנות 22.7): גיבוי-ההצלה נוצר אוטומטית לפני איפוס (#reset/#new) — כאן מחזירים אותו
+    let hasRescue = false, rescueAt = "";
+    try {
+      const raw = localStorage.getItem("mally_findash_rescue");
+      if (raw) { hasRescue = true; const w = JSON.parse(raw); if (w && w.savedAt) { const d = new Date(w.savedAt); rescueAt = ` (נשמר ${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()})`; } }
+    } catch (e) {}
+    return `<div class="panel">
+      <h2>🛟 שחזור חירום</h2>
+      <p class="desc">אם הנתונים נמחקו בטעות (למשל קישור איפוס) — רגע לפני כל מחיקה נשמר אוטומטית גיבוי-הצלה אחד, ואפשר לחזור אליו.</p>
+      ${hasRescue
+        ? `<button class="small" onclick="if(confirm('לשחזר את גיבוי-ההצלה האחרון${rescueAt}? המצב הנוכחי יוחלף בו.'))restoreRescue()">🛟 שחזור מגיבוי-ההצלה האחרון${rescueAt}</button>`
+        : `<div class="small muted">אין כרגע גיבוי-הצלה שמור — הוא נוצר אוטומטית רק אם נעשה איפוס. לגיבוי יזום: כפתור "גיבוי ⬇" למעלה.</div>`}
+    </div>`; })()}
   ${advisorLocalSetup() ? `<div class="panel">
     <h2>חיבור לבנק</h2>
     <p>הסנכרון רץ מקומית במחשב בלבד (תיקיית <code>sync</code>) ומתעדכן אוטומטית כל בוקר. אפשר גם ידנית — דאבל-קליק על <b>"סנכרן עכשיו.command"</b>.</p>
@@ -2818,10 +3553,57 @@ function renderSettings() {
 }
 function TP(key, val) { P().settings.taxParams[key] = Number(val); render(); }
 
+/* ========== ניווט: ארגון מחדש (PRR 23.7 — "עוד" היה 17 פריטים שטוחים עם שמות חופפים) ==========
+   "תזרים" — מסך השימוש היומיומי — עולה לשורה הראשית; "הדייט החודשי" (טקס חודשי) עובר ל"עוד".
+   תפריט "עוד" נבנה כפאנל מקובץ לפי נושא. שמות התצוגה מתעדכנים כאן — ה-id-ים לא משתנים. */
+const NAV_LABELS = {
+  moneydate: "📅 הדייט החודשי",       // היה "הדייט" — מבהיר שזה טקס חודשי
+  cashforecast: "📆 תזרים צפוי",
+  forecast: "🔭 תחזית שנתית",          // היה "תחזית ומס" — נבדל עכשיו בבירור מ"תכנון מס"
+  plan: "🔮 החודשים הבאים",            // היה "תכנון קדימה" — נבדל מ"תכנון מס"/"תכנון מול ביצוע"
+  marketing: "📣 שיווק",
+  vs: "⚖️ תכנון מול ביצוע",
+  scenarios: "🎲 תרחישים",
+  invest: "💰 השקעות",
+  freedom: "🌴 תוכנית חופש",
+  settings: "⚙️ הגדרות",
+};
+const NAV_GROUPS = [
+  ["📅 שוטף",  ["cashforecast", "pipeline", "moneydate", "accountant"]],
+  ["🎯 תכנון", ["goals", "taxplan", "forecast", "plan", "scenarios", "freedom"]],
+  ["📈 לגדול", ["grow", "marketing", "impulse", "vs", "invest"]],
+  ["⚙️ חשבון", ["onboarding", "settings"]],
+];
+function setupNav() {
+  const tabs = $("tabs");
+  const btn = id => tabs.querySelector(`button[data-tab="${id}"]`);
+  const cf = btn("cashflow"), md = btn("moneydate");
+  if (cf && md) { cf.classList.remove("more"); md.classList.add("more"); tabs.insertBefore(cf, md); }
+  for (const [id, label] of Object.entries(NAV_LABELS)) { const b = btn(id); if (b) b.textContent = label; }
+  const menu = document.createElement("div");
+  menu.id = "moreMenu";
+  for (const [title, ids] of NAV_GROUPS) {
+    const g = document.createElement("div");
+    g.className = "moreGroup";
+    const h = document.createElement("h5");
+    h.textContent = title;
+    g.appendChild(h);
+    for (const id of ids) { const b = btn(id); if (b) g.appendChild(b); }
+    menu.appendChild(g);
+  }
+  // רשת ביטחון: טאב עם class="more" שלא שויך לקבוצה (למשל טאב חדש ב-index.html) — לא נעלם, נכנס לקבוצה האחרונה
+  tabs.querySelectorAll(":scope > button.more").forEach(b => menu.lastChild.appendChild(b));
+  tabs.appendChild(menu);
+}
+setupNav();
+
 /* ========== חיווט כללי ========== */
 document.querySelectorAll("#tabs button[data-tab]").forEach(b =>
   b.addEventListener("click", () => { activeTab = b.dataset.tab; $("tabs").classList.remove("more-open"); render(); }));
 $("moreBtn").addEventListener("click", () => $("tabs").classList.toggle("more-open"));
+document.addEventListener("click", e => {           // קליק מחוץ לניווט סוגר את תפריט "עוד"
+  if (!e.target.closest("#tabs")) $("tabs").classList.remove("more-open");
+});
 $("profileSelect").addEventListener("change", e => { DB.active = e.target.value; tagStateTaxes(P()); viewMonth = activeMonth(P()); render(); });
 $("btnNewProfile").addEventListener("click", () => {
   const name = prompt("שם התיק החדש (למשל: לקוח — דנה):");

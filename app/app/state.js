@@ -2,12 +2,61 @@
 "use strict";
 
 const LS_KEY = "mally_findash_v1";
+let LAST_SAVED = null;   // המחרוזת האחרונה שנשמרה בהצלחה (ל-dirty-check של save; מוצהר כאן — לא בין פרופיל-הפתיחה ל-save, כי בילד הציבורי גוזר את הקטע הזה)
 
-/* איפוס מלא (טקס לקוחה-חדשה): פותחים את האפליקציה עם ‎#reset בסוף הכתובת —
-   האחסון המקומי נמחק ומתחילים מאפס עם שאלון ההיכרות. (הגיבוי תמיד קודם!) */
-if (typeof location !== "undefined" && location.hash === "#reset") {
-  try { localStorage.removeItem(LS_KEY); } catch (e) {}
+/* איפוס מלא (טקס לקוחה-חדשה): פותחים את האפליקציה עם ‎#reset או ‎#new בסוף הכתובת.
+   מנגנון הגנה (סקירת מוכנות 22.7.2026): קישור עם ‎#reset לא מוחק יותר בשקט —
+   1) שואלים במפורש לפני מחיקה; 2) שומרים גיבוי-הצלה אוטומטי אחד (RESCUE_KEY)
+   שאפשר לשחזר ממנו עם restoreRescue(). ביטול = מנקים את ה-hash וטוענים כרגיל. */
+const RESCUE_KEY = "mally_findash_rescue";
+if (typeof location !== "undefined" && (location.hash === "#reset" || location.hash === "#new")) {
+  const wantFresh = location.hash === "#new";
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) {
+      // יש נתונים קיימים — מבקשים אישור מפורש לפני שנוגעים בהם
+      let msg = "פעולה זו תמחק את כל הנתונים במכשיר הזה. להמשיך?";
+      try {
+        const db = JSON.parse(raw);
+        const act = db && db.profiles && db.profiles[db.active];
+        if (act && act.settings && act.settings.auth)
+          msg = "התיק במכשיר הזה מוגן בחשבון. אישור ימחק את כל הנתונים (נשמר גיבוי-הצלה אוטומטי אחד שאפשר לשחזר). להמשיך?";
+      } catch (e) {}
+      // אישור מוקלד (לא confirm): דפדפני אוטומציה מאשרים confirm() אוטומטית, ו-Enter מהיר
+      // עלול לאשר בטעות (תקרית 22.7 — טאב תצוגה נמחק ע"י אישור אוטומטי). הקלדת "מחק"
+      // אינה ניתנת לאישור-ברירת-מחדל: אוטומציה מחזירה ""/null → המחיקה לא מתבצעת.
+      const typed = (typeof prompt === "function") ? prompt(msg + '\n\nכדי לאשר, הקלידי כאן את המילה: מחק') : null;
+      const approved = typed !== null && typed.trim() === "מחק";
+      if (approved) {
+        // גיבוי-הצלה: המצב האחרון לפני המחיקה (שומרים אחד — האחרון)
+        try { localStorage.setItem(RESCUE_KEY, JSON.stringify({ savedAt: new Date().toISOString(), db: JSON.parse(raw) })); } catch (e) {}
+        try { localStorage.removeItem(LS_KEY); } catch (e) {}
+        try { sessionStorage.setItem("soleo_fresh", wantFresh ? "1" : ""); } catch (e) {}
+      }
+    } else {
+      // אין נתונים — אין מה למחוק, רק מסמנים את מצב הכניסה המבוקש
+      try { sessionStorage.setItem("soleo_fresh", wantFresh ? "1" : ""); } catch (e) {}
+    }
+  } catch (e) {}
   try { history.replaceState(null, "", location.pathname); } catch (e) { location.hash = ""; }
+}
+/* שחזור מגיבוי-ההצלה (אחרי ‎#reset/#new בטעות). כרגע נקרא מהקונסול: restoreRescue()
+   TODO (גל ה-UI): לחשוף כפתור "שחזור מגיבוי אחרון" במסך ההגדרות */
+function restoreRescue() {
+  try {
+    const raw = localStorage.getItem(RESCUE_KEY);
+    if (!raw) { console.warn("אין גיבוי-הצלה שמור"); return false; }
+    const wrap = JSON.parse(raw);
+    if (!wrap || !wrap.db || !wrap.db.profiles || !wrap.db.active) { console.warn("גיבוי-ההצלה פגום"); return false; }
+    DB = wrap.db; save();
+    try { sessionStorage.removeItem("soleo_fresh"); } catch (e) {}
+    if (typeof location !== "undefined" && location.reload) location.reload();
+    return true;
+  } catch (e) { console.warn("שחזור מגיבוי-ההצלה נכשל", e); return false; }
+}
+/* ‎#new = טקס לקוחה חדשה: תיק נקי עם שאלון (במקום התיק של מלי). ‎#reset = חזרה לתיק של מלי */
+function freshCustomerMode() {
+  try { return sessionStorage.getItem("soleo_fresh") === "1"; } catch (e) { return false; }
 }
 
 /* ---------- זיהוי תשלומי מדינה (מפרט יועץ המקדמות, 16.7.2026) ----------
@@ -92,6 +141,8 @@ function newProfile(name) {
   return {
     name,
     settings: {
+      ownerName: "",                  // השם הפרטי מהשאלון — לברכה אישית בכל האפליקציה
+      accountsCount: 0,               // כמה חשבונות בנק (מהשאלון; 0 = עוד לא נשאל)
       bizType: "morasheh",            // patur | morasheh | baam
       creditPoints: 2.75,
       openingBalance: 0,
@@ -106,7 +157,8 @@ function newProfile(name) {
       taxParams: JSON.parse(JSON.stringify(DEFAULT_TAX_PARAMS))
     },
     categories: DEFAULT_CATEGORIES.map(c => ({ id: uid(), vatDeductible: c.tag === "biz", ...c })),
-    clients: [],        // {id, name, monthlyFee, paymentsLeft, startMonth "YYYY-MM", productId}
+    clients: [],        // {id, name, monthlyFee, paymentsLeft, startMonth "YYYY-MM", productId, vatInclusive?}
+                        // vatInclusive===true → המחיר כולל מע"מ (מנועי הרווח מחלקים ב-1.18); undefined = לפני מע"מ (ברירת מחדל)
     products: [],       // מוצרים/שירותים: {id, name, price (מחיר ללקוח לפני מע"מ), unitCost (עלות ישירה לעסקה)}
     employees: [],      // עובדים: {id, name, salary (ברוטו חודשי), factor (מקדם עלות מעביד, ברירת מחדל 1.34)}
     extraIncome: [],    // {id, name, kind:"oneoff"|"monthly", amount, month, monthsCount}
@@ -161,6 +213,9 @@ function defaultFreedomPlan() {
 
 /* השלמת שדות חסרים בתיקים קיימים (מיגרציה) */
 function migrate() {
+  // schemaVersion (23.7.2026, אבן דרך D): מספר גרסת מבנה-הנתונים — מאפשר מיגרציות עתידיות
+  // מפורשות ("אם גרסה < 3 עשה X") במקום ניחוש-לפי-שדות. תיק בלי המספר = כל מה שקדם לו.
+  if (!DB.schemaVersion) DB.schemaVersion = 2;
   for (const id in DB.profiles) {
     const p = DB.profiles[id];
     if (!p.freedomPlan) p.freedomPlan = defaultFreedomPlan();
@@ -184,11 +239,22 @@ function migrate() {
     if (p.settings.payYourselfRate == null) p.settings.payYourselfRate = 0.10;
     if (!p.settings.gender) p.settings.gender = "f";
     if (p.settings.accountsSetup == null) p.settings.accountsSetup = "";
+    // אונבורדינג V2 (21.7.2026): שם פרטי + מספר חשבונות — מיגרציה עדינה לתיקים קיימים
+    if (p.settings.ownerName == null) p.settings.ownerName = "";
+    if (p.settings.accountsCount == null) {
+      // אם כבר מזוהים שני חשבונות בנק (לא כרטיסי אשראי) — 2, אחרת 1
+      const accs = new Set();
+      for (const t of (p.transactions || []))
+        if (t.source === "bank" && t.account && !/max|isracard|cal\b|כאל|ישראכרט|ויזה|visa|אמריקן|american|mastercard/i.test(t.account))
+          accs.add(t.account);
+      p.settings.accountsCount = accs.size >= 2 ? 2 : 1;
+    }
     if (!p.goals) p.goals = [];
     if (!p.products) p.products = [];
     if (!p.employees) p.employees = [];
     if (!p.deals) p.deals = [];
     if (!p.wishlist) p.wishlist = [];
+    if (!p.deletedBankSigs) p.deletedBankSigs = [];   // מצבות לתנועות בנק שנמחקו ידנית (22.7.2026)
     (p.commitments || []).forEach(c => { if (c.categoryId === undefined) c.categoryId = ""; });
     // עדכון מס 7.2026: תיקים שנוצרו עם מדרגות טרום-הרפורמה (ריווח מדרגות, תיקון 288) — מרעננים לפרמטרים המאומתים
     const oldTp = p.settings.taxParams;
@@ -205,6 +271,21 @@ function migrate() {
 let DB = load();
 migrate();
 
+/* מעקב "ביקור אחרון" (ריענון 24.7.2026): פעם אחת בעליית האפליקציה — לא בכל render.
+   נותן נקודת אמת אמיתית ("prevVisitAt") להשוואה, בלי פרוקסי מומצא כמו "אתמול" בלוח שנה.
+   ביקור ראשון: lastVisitAt נעדר → prevVisitAt נשאר null (אין קו השוואה — Unknown כן, לא ממציאים).
+   מכאן ואילך כל טעינה מעדכנת lastVisitAt לזמן הנוכחי, כדי שהביקור הבא ידע להשוות נכון. */
+let prevVisitAt = null;
+(function trackVisit() {
+  try {
+    const p = P();
+    if (!p || !p.settings) return;
+    prevVisitAt = p.settings.lastVisitAt || null;
+    p.settings.lastVisitAt = new Date().toISOString();
+    save();
+  } catch (e) {}
+})();
+
 function load() {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -217,13 +298,35 @@ function load() {
 }
 
 function save() {
-  localStorage.setItem(LS_KEY, JSON.stringify(DB));
+  /* שמירה בטוחה (סקירת מוכנות 22.7.2026): לא כותבים אם כלום לא השתנה (LAST_SAVED — מוצהר
+     למעלה ליד LS_KEY), וכשל אחסון (מכסה מלאה וכו') לא מפיל את האפליקציה — מדליק דגל. */
+  try {
+    const s = JSON.stringify(DB);
+    if (s === LAST_SAVED) return;   // אין שינוי אמיתי — אין כתיבה
+    localStorage.setItem(LS_KEY, s);
+    LAST_SAVED = s;
+    window.SAVE_FAILED = false;
+  } catch (e) {
+    // QuotaExceededError וכדומה: הנתונים בזיכרון תקינים, רק השמירה למכשיר נכשלה
+    // TODO (גל ה-UI): להציג באנר "השמירה נכשלה — כדאי לייצא גיבוי" כשהדגל דולק
+    window.SAVE_FAILED = (e && e.message) || true;
+    console.warn("save failed", e);
+  }
 }
 
 function P() { return DB.profiles[DB.active]; }
 
 /* פנייה מותאמת: G("נקבה","זכר") לפי הגדרת הפרופיל (ברירת מחדל: נקבה) */
 function G(f, m) { return ((P().settings || {}).gender === "m") ? m : f; }
+
+/* השם הפרטי לברכות: קודם מהשאלון (ownerName), אחרת משם התיק — אם הוא נראה כמו שם של בן אדם */
+function ownerName() {
+  const p = P();
+  const fromQ = ((p.settings || {}).ownerName || "").trim();
+  if (fromQ) return fromQ.split(" ")[0];
+  const raw = (p.name || "").split(" ")[0] || "";
+  return /תיק|עסק|דמו|ראשי|דוגמה|שלי/.test(raw) ? "" : raw;
+}
 
 /* ---------- עזרי תאריכים וכסף ---------- */
 function ym(d) { return d.toISOString().slice(0, 7); }
@@ -291,18 +394,34 @@ function autoClassify(p) {
 /* ---------- תנועות בנק ----------
    נתוני הבנק הם "מקור האמת": בכל טעינה בונים מחדש את תנועות הבנק מתוך window.BANK_DATA,
    ושומרים את הסיווגים/תיוגים הידניים לפי חתימה (תאריך|סכום|תיאור).
-   כך מזהה לא-ייחודי מהסורק (למשל Leumi) לא "בולע" תנועות אמיתיות. */
+   כך מזהה לא-ייחודי מהסורק (למשל Leumi) לא "בולע" תנועות אמיתיות.
+   מ-22.7.2026: תנועות זהות באותו יום מקבלות מונה בחתימה (sig|#2, sig|#3...) לפי סדר
+   הופעה יציב — שתי קניות זהות באותו יום נשארות שתיים, לא נבלעות לאחת. */
+function bankTxSig(t) { return `${t.date}|${t.amount}|${(t.desc || "").trim()}`; }
+/* מוסיף לכל תנועה ברשימה חתימה ייחודית עם מונה הופעות (דטרמיניסטי — לפי סדר המערך) */
+function withSigCounters(list) {
+  const seen = new Map();
+  return list.map(t => {
+    const s = bankTxSig(t);
+    const n = (seen.get(s) || 0) + 1;
+    seen.set(s, n);
+    return { t, sig: n > 1 ? `${s}|#${n}` : s };
+  });
+}
 function mergeBankData() {
   if (DB.active !== "main") return 0;   // נתוני הבנק נכנסים רק לתיק הראשי — לא לתיקי לקוחות/דמו
+  if (freshCustomerMode()) return 0;    // טקס לקוחה-חדשה (#new): תיק נקי — בלי נתוני הבנק של בעלת האפליקציה
   const bank = (window.BANK_DATA && window.BANK_DATA.transactions) || [];
   const p = P();
-  const sig = t => `${t.date}|${t.amount}|${(t.desc || "").trim()}`;
+  if (!p.deletedBankSigs) p.deletedBankSigs = [];
+  const deleted = new Set(p.deletedBankSigs);   // מצבות: תנועות בנק שנמחקו ידנית — לא חוזרות בסנכרון
   const prevBank = p.transactions.filter(t => t.source === "bank");
   const prevBySig = new Map();
-  for (const t of prevBank) if (!prevBySig.has(sig(t))) prevBySig.set(sig(t), t);
+  for (const { t, sig } of withSigCounters(prevBank)) if (!prevBySig.has(sig)) prevBySig.set(sig, t);
   const nonBank = p.transactions.filter(t => t.source !== "bank");
-  const newBank = bank.map(b => {
-    const s = `${b.date}|${b.amount}|${(b.desc || "").trim()}`;
+  const newBank = [];
+  for (const { t: b, sig: s } of withSigCounters(bank)) {
+    if (deleted.has(s)) continue;   // המשתמשת מחקה — מכבדים את המחיקה גם אחרי סנכרון
     const prev = prevBySig.get(s);
     let categoryId = prev ? prev.categoryId : null;
     if (categoryId == null) {
@@ -316,16 +435,30 @@ function mergeBankData() {
       ...(b.inst ? { inst: b.inst } : {})
     };
     if (prev && prev.serves != null) tx.serves = prev.serves;
-    return tx;
-  });
+    newBank.push(tx);
+  }
   p.transactions = nonBank.concat(newBank);
   save();
   return newBank.length - prevBank.length;
 }
 
+/* מצבה לתנועת בנק שנמחקת ידנית: רושמים את חתימתה (כולל מונה) כדי שהסנכרון הבא לא יחזיר אותה.
+   קוראים לזה לפני ההסרה מהמערך. TODO (גל ה-UI): לקרוא מ-delTx כשמוחקים תנועה עם source==="bank" */
+function tombstoneBankTx(p, t) {
+  if (!t || t.source !== "bank") return;
+  if (!p.deletedBankSigs) p.deletedBankSigs = [];
+  // אותה שיטת מונה כמו במיזוג: סדר תנועות הבנק במערך זהה לסדר המקור — החתימה תואמת
+  const bankOnly = p.transactions.filter(x => x.source === "bank");
+  const found = withSigCounters(bankOnly).find(e => e.t === t);
+  const sig = found ? found.sig : bankTxSig(t);
+  if (!p.deletedBankSigs.includes(sig)) p.deletedBankSigs.push(sig);
+  save();
+}
+
 /* ---------- ייבוא לקוחות מהאקסל (clients_data.js) ---------- */
 function mergeClientsData() {
   if (DB.active !== "main") return 0;   // לקוחות מהאקסל — רק לתיק הראשי
+  if (freshCustomerMode()) return 0;    // טקס לקוחה-חדשה (#new): בלי הלקוחות של בעלת האפליקציה
   const cd = window.CLIENTS_DATA;
   if (!cd || !Array.isArray(cd.clients)) return 0;
   const p = P();
