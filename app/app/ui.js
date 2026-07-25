@@ -332,15 +332,16 @@ function diagnosisLine(p) {
   if (stateAmt <= 0 && expAmt <= 0) return "";
   const stateShare = stateAmt / sp.monthlyIncome;
   const expShare = expAmt / sp.monthlyIncome;
+  const inWord = sp.src === "recurring" ? "שהערכת שייכנס" : "שנכנסו";  // DoT: לא אומרים "נכנס בפועל" על סכום שהוא עדיין הערכה מהשאלון
   let text;
   if (expAmt <= 0 || (stateAmt > 0 && Math.abs(stateShare - expShare) < 0.05)) {
     text = stateAmt > 0
-      ? `מ-${fmt(sp.monthlyIncome)} שנכנסו ${mw}, ${fmt(stateAmt)} כבר הולכים למדינה (מע"מ, מס הכנסה וביטוח לאומי)${expAmt > 0 ? ` ועוד ${fmt(expAmt)} יצאו בהוצאות` : ""} — זו הסיבה שנשאר פחות ממה שחשבת.`
-      : `מ-${fmt(sp.monthlyIncome)} שנכנסו ${mw}, ${fmt(expAmt)} יצאו בהוצאות — זה מה שמקטין את מה שנשאר לך.`;
+      ? `מ-${fmt(sp.monthlyIncome)} ${inWord} ${mw}, ${fmt(stateAmt)} כבר הולכים למדינה (מע"מ, מס הכנסה וביטוח לאומי)${expAmt > 0 ? ` ועוד ${fmt(expAmt)} יצאו בהוצאות` : ""} — זו הסיבה שנשאר פחות ממה שחשבת.`
+      : `מ-${fmt(sp.monthlyIncome)} ${inWord} ${mw}, ${fmt(expAmt)} יצאו בהוצאות — זה מה שמקטין את מה שנשאר לך.`;
   } else if (stateShare > expShare) {
-    text = `מ-${fmt(sp.monthlyIncome)} שנכנסו ${mw}, ${fmt(stateAmt)} כבר הולכים למדינה (מע"מ, מס הכנסה וביטוח לאומי) — זו הסיבה שנשאר פחות ממה שחשבת, יותר מההוצאות עצמן.`;
+    text = `מ-${fmt(sp.monthlyIncome)} ${inWord} ${mw}, ${fmt(stateAmt)} כבר הולכים למדינה (מע"מ, מס הכנסה וביטוח לאומי) — זו הסיבה שנשאר פחות ממה שחשבת, יותר מההוצאות עצמן.`;
   } else {
-    text = `מ-${fmt(sp.monthlyIncome)} שנכנסו ${mw}, ${fmt(expAmt)} יצאו בהוצאות — זה הגורם העיקרי שמקטין את מה שנשאר לך, יותר מהמסים.`;
+    text = `מ-${fmt(sp.monthlyIncome)} ${inWord} ${mw}, ${fmt(expAmt)} יצאו בהוצאות — זה הגורם העיקרי שמקטין את מה שנשאר לך, יותר מהמסים.`;
   }
   return `<div style="margin-top:8px">🔍 ${text} <span class="small" style="opacity:.7">(הערכה — לא תחליף לרו"ח)</span></div>`;
 }
@@ -1415,7 +1416,7 @@ function renderOnboarding() {
     case 0:
       inner = `<div style="text-align:center;padding:10px 0">${lemonSVG}
         <h2 style="margin:10px 0 4px;color:var(--brand)">היי! אני Soleo 🍋</h2>
-        <p class="desc">2 דקות, ואני תופר לך את האפליקציה בדיוק עליך. אחר כך אני עושה את רוב העבודה בשבילך.</p>
+        <p class="desc">2 דקות, ואני תופר לך את האפליקציה בדיוק עליך. אחר כך זה הכי פשוט שיש — מזינים מה נכנס ומה יצא, ואני עושה את כל החשבון.</p>
         <div style="font-size:15px;font-weight:800;margin:16px 0 8px">איך קוראים לך? 🍋</div>
         <input type="text" value="${esc(a.name || "")}" placeholder="השם הפרטי שלך" oninput="obA().name=this.value;save();var el=document.getElementById('obHi');if(el){var n=this.value.trim();el.textContent=n?('נעים להכיר, '+n+' 💛'):'';el.style.display=n?'block':'none'}" style="max-width:240px;text-align:center;font-size:16px">
         <div id="obHi" class="small" style="color:#8a6a00;font-weight:700;margin-top:8px;display:${(a.name || "").trim() ? "block" : "none"}">${(a.name || "").trim() ? `נעים להכיר, ${esc(a.name.trim())} 💛` : ""}</div>
@@ -1461,7 +1462,7 @@ function renderOnboarding() {
           ${a.incomeGoal > 0 && a.avgPerClient > 0 && est > 0 ? `<div style="margin-top:8px;font-size:13px;color:#8a6a00;font-weight:700">✨ כלומר: עוד בערך ${Math.max(0, Math.ceil((a.incomeGoal - est) / a.avgPerClient))} לקוחות בחודש — ואת זה נעזור לך להשיג 💪</div>` : ""}
         </div>
         ${(a.bizType === "morasheh" || a.bizType === "baam") ? `<div style="background:var(--brand-soft);border-radius:13px;padding:11px 13px;margin-top:10px">
-          <div style="font-size:13px;color:#47541F">🏛️ <b>ומה עם מקדמות המס והביטוח הלאומי?</b> כלום — אנחנו נזהה אותם לבד מחשבון הבנק שלך. אפס טפסים 😊</div>
+          <div style="font-size:13px;color:#47541F">🏛️ <b>ומה עם מקדמות המס והביטוח הלאומי?</b> מזינה את הסכומים פעם אחת, ואני אזכיר לך כל חודש. אפס טפסים 😊</div>
         </div>` : ""}`;
       return $("tab-onboarding").innerHTML = wrap(inner, { next: "obNext()" });
     }
@@ -1491,8 +1492,8 @@ function renderOnboarding() {
             obChipMulti("focus", "coach", "💬 ליווי אישי של מאמן פיננסי"));
       return $("tab-onboarding").innerHTML = wrap(inner, { next: "obNext()" });
     case 6:
-      inner = H("כמה בא לך להתעסק?") + sub(`אני יכול לעשות כמעט הכל בשבילך — ${G("את בוחרת","אתה בוחר")} את הקצב.`) +
-        col(obChip("involve", "auto", "😌 תעשו הכל בשבילי", a.involve === "auto") +
+      inner = H("כמה בא לך להתעסק?") + sub(`אני מנתחת בשבילך כל מה שתזיני — ${G("את בוחרת","אתה בוחר")} כמה עומק.`) +
+        col(obChip("involve", "auto", "😌 תנו לי הכי הרבה תובנות", a.involve === "auto") +
             obChip("involve", "see", `👀 ${G("אוהבת","אוהב")} לראות ולהחליט`, a.involve === "see") +
             obChip("involve", "control", `🎛️ ${G("שולטת","שולט")} בכל פרט`, a.involve === "control"));
       return $("tab-onboarding").innerHTML = wrap(inner);
@@ -1552,7 +1553,7 @@ function renderOnboarding() {
             (a.whatsapp === "yes" ? `<div style="background:#fff;border:1px solid var(--line);border-radius:13px;padding:12px 14px">
               <div style="font-size:13.5px;font-weight:700;margin-bottom:6px">לאיזה מספר? 📱</div>
               <input type="tel" dir="ltr" value="${esc(a.whatsappPhone || "")}" placeholder="050-1234567" onchange="obA().whatsappPhone=this.value;save()" style="width:170px;text-align:center">
-              <div class="small muted" style="margin-top:6px">נחבר אותך בפגישת ההקמה — המספר נשמר רק אצלך באפליקציה.</div>
+              <div class="small muted" style="margin-top:6px">המספר נשמר רק אצלך באפליקציה, לא אצלנו.</div>
             </div>` : "") +
             obChip("whatsapp", "no", "לא עכשיו", a.whatsapp === "no"));
       return $("tab-onboarding").innerHTML = wrap(inner, a.whatsapp === "yes" ? { next: "obNext()" } : {});
@@ -1568,7 +1569,7 @@ function renderOnboarding() {
           <div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">🧾 נשמור לך על: <b>מס חכם — כמה חוזר מכל הוצאה</b></div>
           <div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">🏆 נצעד ליעדים: <b>${a.goals.length} יעדים (קצר/בינוני/רחוק)</b></div>
           <div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">🎈 תקצבנו יחד: <b>🏢 ${nBiz} לעסק · 🏠 ${nHome} לבית</b></div>
-          ${a.accounts==='sep'?`<div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">💵 נגדיר לך <b>משכורת קבועה מהעסקי לפרטי</b> — כמו שכיר, בלי בלגן בין החשבונות</div>`
+          ${a.accounts==='sep'?`<div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">💵 נחשב לך <b>משכורת קבועה מהעסקי לפרטי</b> — כמו שכיר, בלי בלגן בין החשבונות (את/ה מעביר/ה, אני עוקבת)</div>`
           : a.accounts==='mixed'?`<div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 12px">🔀 חשבון אחד? סבבה — <b>נפריד בשבילך מה של העסק 🏢 ומה של הבית 🏠</b>, בלי שתתעסקי בזה</div>`:""}
           ${a.freedomMonthly>0?`<div style="background:#FFF6D9;border:1px solid #F0D98A;border-radius:11px;padding:9px 12px">🌴 מספר החופש שלך: <b>${fmt(a.freedomMonthly*12*25)}</b><div class="small" style="color:#6d5c00;margin-top:2px">הון שמניב לך ${fmt(a.freedomMonthly)} בחודש בלי לעבוד (כלל ה-4%). נבנה את הדרך לשם צעד-צעד — במסך "תוכנית חופש".</div></div>`:""}
         </div></div>`;
@@ -1584,19 +1585,12 @@ function renderOnboarding() {
         </button>`;
       $("tab-onboarding").innerHTML = `<div class="panel" style="max-width:520px;margin:0 auto;background:var(--bg)">
         <div style="text-align:center">${lemonSVG}
-          <h2 style="margin:10px 0 4px;color:var(--brand)">עכשיו מחברים את הבנק והאשראי 🔌</h2>
-          <p class="desc">כדי שהכל יתעדכן לבד${nm ? `, ${esc(nm)}` : ""} — בלי להקליד כלום ובלי לרדוף אחרי מספרים.</p>
+          <h2 style="margin:10px 0 4px;color:var(--brand)">איך מתחילים? 📝</h2>
+          <p class="desc">היום מזינים ידנית${nm ? `, ${esc(nm)}` : ""} — חיבור אוטומטי לבנק ולאשראי בדרך, בלי תאריך מובטח.</p>
         </div>
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
-          ${opt("connect", "💛", "חברו אותי", "מתחברים פעם אחת במחשב, ומכאן הכל מתעדכן לבד כל בוקר.", "obBank('connect')", true)}
-          ${obBankChoice === "connect" ? `<div style="background:#fff;border:1px solid var(--line);border-radius:13px;padding:13px 15px;font-size:14px;line-height:1.8">
-            עושים את זה יחד בפגישת ההקמה — או שכותבים לנו עכשיו, ואנחנו מלווים אותך צעד-צעד. פעם אחת, ומאז החיבור שלך עובד לבד. 💛
-            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-              <button class="small" onclick="openSupport()">💬 כתבו לנו — נעשה את זה יחד</button>
-              <button class="small ghost" onclick="obDone()">בינתיים לאפליקציה ←</button>
-            </div></div>` : ""}
-          ${opt("demo", "👀", "אני רוצה לראות קודם", "נראה לך הכל עם נתוני דוגמה — בלי להתחייב. אפשר לחבר מתי שבא לך.", "obDemo()", false)}
-          ${opt("manual", "✍️", "אזין ידנית בינתיים", "מוסיפים הכנסות והוצאות לבד — שתי דקות. תמיד אפשר לחבר אחר כך.", "obManual()", false)}
+          ${opt("manual", "✍️", "מתחילים להזין", "מוסיפים הכנסות והוצאות לבד — שתי דקות, ומאז רק מציצים.", "obManual()", true)}
+          ${opt("demo", "👀", "אני רוצה לראות קודם", "נראה לך הכל עם נתוני דוגמה — בלי להתחייב. אפשר להזין נתונים אמיתיים מתי שבא לך.", "obDemo()", false)}
         </div>
         <div style="text-align:center;margin-top:14px"><button class="ghost small" onclick="obDone()">אחר כך — קחו אותי לאפליקציה ←</button></div>
       </div>`;
@@ -1659,7 +1653,7 @@ function renderGoals() {
     <div style="height:8px;background:#eee;border-radius:4px;margin:9px 0"><div style="width:${Math.round(g.pctDone * 100)}%;height:8px;background:var(--brand);border-radius:4px"></div></div>
     <div class="small" style="background:var(--brand-soft);border-radius:10px;padding:9px 11px;color:#47541F">
       ${g.remaining <= 0 ? "🎉 הגעת ליעד!" :
-        g.monthsAtPace ? `בקצב החיסכון הנוכחי — עוד <b>${g.monthsAtPace} חודשים</b>.` : "כדי להגיע, שווה להתחיל לשים בצד כל חודש."}
+        g.monthsAtPace ? `הערכה, לפי קצב החיסכון הנוכחי — עוד <b>${g.monthsAtPace} חודשים</b>.` : "כדי להגיע, שווה להתחיל לשים בצד כל חודש."}
       ${g.extraDeals && g.extraDeals > 0 ? ` כדי להגיע בזמן שהצבת: עוד <b>${g.extraDeals} עסקאות</b> בחודש.` : ""}
     </div></div>`;
   const body = groups.map(gr => {
@@ -1876,7 +1870,7 @@ function renderCashflow() {
           <button class="small ${t.serves===true?'':'ghost'}" title="כן, שירת את המטרה" onclick="setServes('${t.id}',true)">👍</button>
           <button class="small ${t.serves===false?'danger':'ghost'}" title="לא" onclick="setServes('${t.id}',false)">👎</button>` : ""}</td>
         <td style="white-space:nowrap"><button class="ghost small" title="העברה בין החשבונות שלך (גם לחשבון שלא מחובר) — לא נספרת כהכנסה או הוצאה" onclick="toggleTransferManual('${t.id}')" style="${t.transfer?'background:#e8ecf7':''}">⇄</button> <button class="danger small" onclick="delTx('${t.id}')">✕</button></td>
-      </tr>`).join("") || `<tr><td colspan="6" class="muted">אין תנועות בחודש הזה — אפשר להוסיף למטה או לסנכרן מהבנק</td></tr>`}
+      </tr>`).join("") || `<tr><td colspan="6" class="muted">אין תנועות בחודש הזה — אפשר להוסיף למטה</td></tr>`}
     </table></div>
     <div class="addLine">
       <div><label>תאריך</label><input type="date" id="txDate" value="${viewMonth}-15"></div>
