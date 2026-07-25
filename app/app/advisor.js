@@ -199,7 +199,7 @@ async function sendAdvisorMessage(text) {
       : `<p style="color:var(--red)">שגיאה: ${esc(data.error || "לא ידועה")}</p>` });
   } catch {
     advisorServerUp = false;
-    // הוראות ההפעלה המקומיות (קבצי command) — רק בהתקנה של מלי; לקוחות מקבלים הסבר כללי
+    // הוראות ההפעלה המקומיות (קבצי command) — רק בהתקנה המקומית של הצוות; לקוחות מקבלים הסבר כללי
     advisorChat.push({ role: "assistant",
       content: advisorLocalSetup()
         ? `<p>היועץ החכם לא פעיל כרגע.</p><p>כדי להפעיל אותו: דאבל-קליק על <b>"הפעל יועץ AI.command"</b> (פעם ראשונה — קודם <b>"הגדרת מפתח AI.command"</b>), ואז ${G("נסי","נסה")} שוב. בינתיים אפשר להשתמש בשאלות המהירות למטה. 💚</p>`

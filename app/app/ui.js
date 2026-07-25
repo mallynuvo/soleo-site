@@ -233,7 +233,7 @@ let profScope = "year";
 function toggleProfScope() { profScope = profScope === "year" ? "month" : "year"; render(); }
 /* יעד חופש שהוגדר במודע (סקירת מוכנות 22.7): ברירת המחדל הגנרית (480 אלף לשנה → "12 מיליון")
    היא לא חלום של אף אחד — לא מציגים אותה כאילו המשתמשת בחרה בה. "הוגדר" = נענה בשאלון,
-   נערך בתוכנית החופש (userSet), או שהערך שונה מברירת המחדל (תיקים ותיקים כמו של מלי). */
+   נערך בתוכנית החופש (userSet), או שהערך שונה מברירת המחדל (תיקים ותיקים ישנים). */
 function freedomGoalSet(p) {
   const fp = p.freedomPlan;
   if (!fp || !(fp.annualSpendTarget > 0)) return false;
@@ -527,7 +527,7 @@ function renderHome() {
     </div>`; })()}
 
   ${(function(){
-    // 💚 כמה חסכת החודש — ההוצאות המוכרות עובדות בשבילך (התובנה של מלי מהרו"ח, 16.7)
+    // 💚 כמה חסכת החודש — ההוצאות המוכרות עובדות בשבילך (התובנה מהרו"ח, 16.7)
     const sv = monthlySavings(p, M);
     if (!(sv.total > 0)) return "";
     return `<div class="panel" style="background:#E7F6EC;border:none">
@@ -1025,7 +1025,7 @@ function runImpulse() {
 
 /* ========== 🍋 שאלון כניסה — פשוט, מתאים את האפליקציה לכל לקוח ========== */
 /* ========== 💛 עזרה ותמיכה — תמיד זמין, בכל מסך ========== */
-const SUPPORT_EMAIL = "hello@soleoapp.com";   // כל התמיכה במייל (החלטת מלי 16.7); וואטסאפ — אולי בהמשך
+const SUPPORT_EMAIL = "hello@soleoapp.com";   // כל התמיכה במייל (החלטת הבעלים 16.7); וואטסאפ — אולי בהמשך
 function openSupport() {
   const subject = encodeURIComponent("עזרה עם Soleo 🍋");
   const body = encodeURIComponent("היי צוות Soleo,\n\nאני צריכ/ה עזרה עם: ");
@@ -2493,7 +2493,7 @@ function renderTaxPlan() {
   </div>
 
   ${(function(){
-    // 🎯 שתי השורות הגדולות: כמה הולך לרדת · כמה חסכת (בקשת מלי 16.7)
+    // 🎯 שתי השורות הגדולות: כמה הולך לרדת · כמה חסכת (בקשת הבעלים 16.7)
     const M0 = activeMonth(p);
     const period = vatPeriodOf(M0);
     let vatOut = 0, vatIn = 0;

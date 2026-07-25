@@ -54,7 +54,7 @@ function restoreRescue() {
     return true;
   } catch (e) { console.warn("שחזור מגיבוי-ההצלה נכשל", e); return false; }
 }
-/* ‎#new = טקס לקוחה חדשה: תיק נקי עם שאלון (במקום התיק של מלי). ‎#reset = חזרה לתיק של מלי */
+/* ‎#new = טקס לקוחה חדשה: תיק נקי עם שאלון (במקום התיק המקורי). ‎#reset = חזרה לתיק המקורי */
 function freshCustomerMode() {
   try { return sessionStorage.getItem("soleo_fresh") === "1"; } catch (e) { return false; }
 }

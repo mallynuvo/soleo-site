@@ -101,7 +101,7 @@ function dailyMessage() {
   return DAILY_MESSAGES[day % DAILY_MESSAGES.length];
 }
 
-/* יישור למטרות — כמה מההוצאות החודש "שירתו את המטרות" (לפי תיוג של מלי) */
+/* יישור למטרות — כמה מההוצאות החודש "שירתו את המטרות" (לפי תיוג ידני) */
 function goalAlignment(p, ymStr) {
   const tx = p.transactions.filter(t => t.amount < 0 && t.date.slice(0, 7) === ymStr && t.serves != null);
   if (!tx.length) return null;
